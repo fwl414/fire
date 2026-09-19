@@ -1557,7 +1557,8 @@ Web 端大屏实时推送与移动端 WebSocket 全都连不上，而且这个�
   `system-monitor.spec.js:10` 等，均为「本地采样值 vs 页面值比对」或长等待型。
 - **生产镜像需要重新构建**才能带上 `websockets`；正在跑的部署若依赖实时推送，升级后要验证一次
   `/ws/notifications` 能正常握手。
-- 本机 `git push` 需走代理：DNS 把 `github.com` 解析成 Clash Verge 的 fake-ip（`198.18.0.57`），
-  而系统代理是关的（`ProxyEnable=0`），直连必然 TLS 握手失败。推送前先
-  `$env:HTTPS_PROXY="http://127.0.0.1:7897"`，或在 Clash Verge 里重新打开「系统代理」。
+- 本机访问 GitHub 要看 Clash Verge 的状态：它开着时 DNS 会把 `github.com` 解析成 fake-ip
+  （`198.18.0.57`）而系统代理常是关的（`ProxyEnable=0`），此时直连必然 TLS 握手失败，
+  `git push` 前要先 `$env:HTTPS_PROXY="http://127.0.0.1:7897"`（或把 Clash 的「系统代理」打开）；
+  它关掉时直连正常，不需要代理。
 
