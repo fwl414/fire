@@ -1576,6 +1576,31 @@ Web 端大屏实时推送与移动端 WebSocket 全都连不上，而且这个�
 
 随后 **PR #1 已合并进 `main`**（9 个提交），main 从此带上全部四项修复。
 
+#### 把「镜像跑起来验 WS」加进 CI
+
+生产镜像那条暴露的不只是依赖漏项，还是**流程缺口**：`docker-build` 作业只验证「镜像能不能构建」，
+从不把镜像跑起来；`release.sh` 的健康检查也只探 HTTP `/health`。于是「构建成功但功能不可用」
+这类缺陷可以一路绿灯发到线上 —— 本次的 WS 缺陷正是如此。
+
+改动（`.github/workflows/ci-cd.yml` 的 `docker-build` 作业）：
+
+| 改动 | 原因 |
+| --- | --- |
+| 构建步骤加 `load: true` | buildx 默认只把镜像留在构建缓存里，不载入本地镜像库，下一步无法 `docker run` |
+| 新增「冒烟：起容器并验证 WebSocket 可升级」 | 起容器 → 等 `/health` → 按 WebSocket 协议发一次升级请求 → **必须**含 `101 Switching Protocols`，否则打印容器日志并以 `::error::` 失败退出 |
+
+判据的本地验证（先验证「这条检查本身对不对」，不依赖 CI）：
+
+| 场景 | 响应 | 检查结果 |
+| --- | --- | --- |
+| uvicorn 正常运行 | `HTTP/1.1 101 Switching Protocols` | 通过 |
+| `uvicorn --ws none`（等价于缺 WS 实现） | `HTTP/1.1 404 Not Found` | 失败（正是旧生产镜像的表现） |
+
+用 `curl` 手工构造升级请求而不引第三方 WS 客户端：免装依赖，且「101 vs 4xx」这个判据
+足够卡住本次的缺陷类型。`bash -n` 语法检查亦通过。
+
+> `/health` 恒返回 HTTP 200（healthy / degraded 体现在 body），所以就绪循环用它判断「容器起来了」是可靠的。
+
 #### 查 Actions 日志的办法
 
 `/actions/jobs/{id}/logs` 匿名访问返回 `Must have admin rights`，`workflow_dispatch` 也要 token。
