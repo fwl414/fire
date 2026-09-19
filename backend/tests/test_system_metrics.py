@@ -9,6 +9,7 @@ import importlib
 import json
 import os
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -40,8 +41,18 @@ class TestSystemMetricsCollection(unittest.TestCase):
         self.assertIsNone(first["network"])
         self.assertEqual(first["trend"], [])
 
-        second = module.host_snapshot()
-        self.assertIsNotNone(second["cpu"])
+        # psutil.cpu_times() 的计数器有粒度（Linux /proc/stat 约 10ms，Windows 约 15.6ms），
+        # 两次调用落在同一个时间片里差值就是 0，此时服务按设计返回 None。
+        # 所以要等计数器真正推进再断言，否则用例会被采样粒度搞成偶发失败——
+        # 同一份代码曾出现「全量跑 1 failed / 再跑一次 612 passed」。
+        second = first
+        for _ in range(20):
+            time.sleep(0.02)
+            second = module.host_snapshot()
+            if second["cpu"] is not None:
+                break
+
+        self.assertIsNotNone(second["cpu"], "等待 0.4s 后 CPU 计数器仍未推进")
         self.assertGreaterEqual(second["cpu"], 0.0)
         self.assertLessEqual(second["cpu"], 100.0)
         self.assertIsNotNone(second["network"])
