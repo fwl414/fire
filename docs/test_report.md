@@ -1542,6 +1542,40 @@ Web 端大屏实时推送与移动端 WebSocket 全都连不上，而且这个�
 > `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH` 四个 Secrets，且本机没有
 > 可用的部署主机，因此这两个作业目前只有「结构上存在 + 守卫步骤会明确报缺哪个 Secret」的保证。
 
+#### 生产镜像实测：WS 修复前后对比
+
+这条不能只靠推理（CI 只验证「镜像能不能构建」，不验证「跑起来 WS 通不通」），所以在真实镜像上做了前后对比：
+本机 `docker build` 出镜像 → 起容器 → 用 `websockets` 客户端发起**真实握手**（故意带无效 token）。
+
+| 镜像 | 镜像内依赖 | WS 探测结果 |
+| --- | --- | --- |
+| 旧（修复前构建的 `fire-ai-agent-backend:py314-check`） | `uvicorn 0.53.0`，无 websockets / wsproto | `HANDSHAKE_FAILED: InvalidStatus server rejected WebSocket connection: HTTP 404` |
+| 新（修复后构建的 `fire-ai-agent:ws-fix`） | `uvicorn 0.53.0` + `websockets 17.1` | `CLOSED: code=4401 reason=令牌无效或已过期` |
+
+新容器日志是 `INFO: ... "WebSocket /ws/notifications" [accepted]` —— 握手成功、首帧被后端收到，
+才会按设计回 4401（探测故意用无效 token，所以 4401 正是期望值）。旧镜像**连握手都过不去**，
+这就是「生产里实时推送一直不可用」的实证。
+
+构建耗时：pip 层 213.8s（requirements 变更导致缓存失效重装），镜像 1.26GB。
+验证用的两个容器已删除；两个镜像（各约 1.25GB）保留在本机，不需要时
+`docker rmi fire-ai-agent:ws-fix fire-ai-agent-backend:py314-check` 即可。
+
+#### run #11 与合并进 main
+
+文档修正推上去后又跑了一轮，同样全绿（`509629b`，8 个作业 0 失败）：
+
+| 作业 | 结果 | 耗时 |
+| --- | --- | --- |
+| 后端测试（pytest 全量） | success | 62s |
+| 前端构建 | success | 66s |
+| 移动端 analyze + test | success | 41s |
+| 移动端 APK 构建 | success | 298s |
+| 生产镜像构建 | success | 46s |
+| 前端 E2E | success | 382s |
+| 发布到部署主机 / 回滚部署主机 | skipped | — |
+
+随后 **PR #1 已合并进 `main`**（9 个提交），main 从此带上全部四项修复。
+
 #### 查 Actions 日志的办法
 
 `/actions/jobs/{id}/logs` 匿名访问返回 `Must have admin rights`，`workflow_dispatch` 也要 token。
