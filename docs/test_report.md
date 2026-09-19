@@ -1599,7 +1599,20 @@ Web 端大屏实时推送与移动端 WebSocket 全都连不上，而且这个�
 用 `curl` 手工构造升级请求而不引第三方 WS 客户端：免装依赖，且「101 vs 4xx」这个判据
 足够卡住本次的缺陷类型。`bash -n` 语法检查亦通过。
 
+CI 实跑（run #16 的 `docker-build`，作业 94s、其中冒烟 15s）：
+
+```
+等待 /health 就绪…
+就绪（第 3 次探测）
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+WebSocket 升级正常（101 Switching Protocols）
+```
+
 > `/health` 恒返回 HTTP 200（healthy / degraded 体现在 body），所以就绪循环用它判断「容器起来了」是可靠的。
+> 探测返回 `curl: (28) ... timed out` 是**预期现象**：升级成功后连接会保持打开，curl 按 `--max-time` 收尾，
+> 但响应头已经拿到，判据仍成立。
 
 #### 查 Actions 日志的办法
 
