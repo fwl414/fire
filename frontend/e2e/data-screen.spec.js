@@ -247,23 +247,35 @@ test.describe('数据大屏', () => {
     await canvas.waitFor({ timeout: 30_000 })
     await page.waitForTimeout(3000)
 
-    // 扫一遍画布：悬停到建筑上时 canvas 的 cursor 会变成 pointer（同时也是可点提示）
-    const box = await canvas.boundingBox()
-    const hits = []
-    for (let ix = 1; ix <= 9; ix += 1) {
-      for (let iy = 1; iy <= 7; iy += 1) {
-        const x = box.x + (box.width * ix) / 10
-        const y = box.y + (box.height * iy) / 8
-        await page.mouse.move(x, y)
-        const cursor = await canvas.evaluate(el => el.style.cursor)
-        if (cursor === 'pointer') hits.push({ x, y })
+    // 悬停到建筑上时 canvas 的 cursor 会变成 pointer（同时也是可点提示）。
+    // 这里不能「先扫完整张画布、再回头点第一个命中点」，原因有两个：
+    //   1) 63 次 move + 读样式在 CI 上要几十秒，会把本用例 90s 的预算耗光（本地没这么慢）；
+    //   2) 场景每帧都在渲染，早先记下的坐标会漂移，回头点很可能已经落空。
+    // 所以改成「找到就立刻点」，整体给一个有限预算；画布尺寸也可能在面板渲染完才稳定，每轮重量一次。
+    const buildingIds = buildings.map(b => b.id).join('|')
+    const reached = () => /\/building-detail\/\d+/.test(page.url())
+    const deadline = Date.now() + 45_000
+    let hovered = 0
+
+    while (!reached() && Date.now() < deadline) {
+      const box = await canvas.boundingBox()
+      for (let ix = 1; ix <= 9 && !reached(); ix += 1) {
+        for (let iy = 1; iy <= 7 && !reached(); iy += 1) {
+          const x = box.x + (box.width * ix) / 10
+          const y = box.y + (box.height * iy) / 8
+          await page.mouse.move(x, y)
+          // 画布可能因为上一次点击已跳转而从 DOM 消失，读不到就当这次没命中（别让它把用例炸掉）
+          const cursor = await canvas.evaluate(el => el.style.cursor).catch(() => '')
+          if (cursor !== 'pointer') continue
+          hovered += 1
+          await page.mouse.click(x, y)
+          // 点击可能触发路由跳转：等一小段让导航落地，跳了就结束，没跳就继续扫
+          await page.waitForURL(/\/building-detail\/\d+/, { timeout: 1500 }).catch(() => {})
+        }
       }
     }
-    expect(hits.length, '场景里应能悬停到建筑上（cursor 变 pointer）').toBeGreaterThan(0)
 
-    await page.mouse.click(hits[0].x, hits[0].y)
-    await page.waitForURL(/\/building-detail\/\d+/, { timeout: 30_000 })
-    const buildingIds = buildings.map(b => b.id).join('|')
+    expect(hovered, '场景里应能悬停到建筑上（cursor 变 pointer）').toBeGreaterThan(0)
     await expect(page, '点建筑应下钻到该建筑档案').toHaveURL(new RegExp(`/building-detail/(${buildingIds})`))
   })
 

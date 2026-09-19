@@ -667,7 +667,7 @@ ingest_alert 产生/升级告警
 
 | 级别 | 问题 | 说明与建议 |
 | --- | --- | --- |
-| 中 | 流水线尚未在 GitHub 上实跑 | 当前工作目录不是 git 仓库，工作流只是文件。推到 GitHub 后需跑一次 PR 验证；`deploy`/`rollback` 还需配置 `DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/DEPLOY_PATH` 四个 Secrets |
+| 中 | ~~流水线尚未在 GitHub 上实跑~~ **已关闭** | 仓库已推到 `github.com/fwl414/fire` 并实跑多轮，6 个校验作业全绿（见 13.11）。仅 `deploy`/`rollback` 仍未实跑 —— 需配置四个 Secrets（`DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/DEPLOY_PATH`）并有可用部署主机 |
 | 低 | 本机拉取 Docker Hub 不通，构建需走镜像源 | 本机直连 `registry-1.docker.io` 超时（Docker Desktop 未配 HTTPS 代理），构建基础镜像时改用 `docker.m.daocloud.io/library/python:3.14-slim` 拉取后 `docker tag` 成 `python:3.14-slim` 才成功。**部署主机若同样访问不了 Docker Hub，需先配置 registry-mirrors 或预拉基础镜像**，否则 `docker compose build` 会在第一步失败 |
 | 低 | 短信通知通道未实现 | 需要短信服务商凭据；现有通道表结构与前端表单是「按类型渲染字段」的，新增类型只需在 `CHANNEL_TYPES` 里加一段配置 + 一个发送函数 |
 | 低 | 通知功能未加 E2E 用例 | 已做接口级验收与 17 条单测；若要在浏览器里回归「新增通道 → 测试 → 删除」链路，可补一条 `e2e/notification-channel.spec.js` |
@@ -1339,4 +1339,226 @@ GET /api/devices/2/detail                              → 200
 - Gradle 8.14 / AGP 8.11.1 / Kotlin 2.2.20 低于 Flutter 当前建议值，能出包但会有升级提示
 - `flutter run` 在 ASCII 联接目录（`F:\mob_ascii`）下偶发 Kotlin 编译守护进程崩溃
   （`e: Daemon compilation failed: null`），本轮改用已构建好的 release APK 绕过，未根治
+
+### 13.11 GitHub 流水线首次实跑（2026-09-19 追加）
+
+12.5 的遗留「流水线尚未在 GitHub 上实跑」到此关闭：把仓库推上 GitHub，真跑了一次。
+
+#### 仓库与首次推送
+
+| 项 | 值 |
+| --- | --- |
+| 远端 | `https://github.com/fwl414/fire`（public） |
+| 仓库根 | 项目目录本身，`git init -b main` |
+| 首次提交 | `6b7ba62` —— 712 文件 / 197,780 行 |
+| 认证 | 系统级 `credential.helper=manager`（Git Credential Manager），无需 PAT |
+
+入库前补的 `.gitignore`（原有规则只挡了 `node_modules/` 与 `fire_ai_agent*.db`，漏得不少）：
+
+| 被挡住的 | 原因 |
+| --- | --- |
+| `.env.staging` | **含真实密钥**（Postgres 口令、`JWT_SECRET_KEY`、`METRICS_TOKEN`、Grafana 口令），文件头自己就写着「请勿提交到版本库」 |
+| `*.db` / `*.db.*` / `backend/backups/` / `backend/data/_cleanup_backup_*/` | 运行库、备份、CI 结构校验库 |
+| `backend/data/reports/`、`notification_read.json` | 运行时生成的巡检报告与通知已读状态 |
+| `frontend/node_modules_old/` | 历史遗留旧依赖（含 9.45MB `esbuild.exe`） |
+| `frontend/test-results/`、`playwright-report/` | Playwright 产物（各含 16MB `trace.zip`） |
+| `backend/data/_cleanup_backup_*/fire_ai_agent.db.backup` 等 | `.db.*` 变体一律排除 |
+
+另按「已暂存内容」扫了一遍硬编码密钥模式（`password|secret|token|api_key` + 16 位以上字面量）：
+17 个命中全部是测试夹具与文档占位符（如 `"********"`），无真实凭据。
+
+#### 触发覆盖：push 只跑 4 个作业
+
+`ci-cd.yml` 共 8 个作业，但 **push 事件只覆盖 4 个** —— 这是首次实跑才看清的：
+
+| 作业 | push | pull_request | workflow_dispatch |
+| --- | --- | --- | --- |
+| 后端测试（pytest 全量） | ✅ | ✅ | ✅（action=ci） |
+| 前端构建 | ✅ | ✅ | ✅（action=ci） |
+| 移动端 analyze + test | ✅ | ✅ | ✅（action=ci） |
+| 生产镜像构建 | ✅ | ✅ | ✅（action=ci） |
+| 移动端 APK 构建 | ⏭ | ✅ | ✅（action=ci） |
+| 前端 E2E | ⏭ | ✅ | ✅（action=ci） |
+| 发布到部署主机 | ⏭ | ⏭ | 仅 action=deploy |
+| 回滚部署主机 | ⏭ | ⏭ | 仅 action=rollback |
+
+原因在 `ci-cd.yml:143` 与 `:196` 的 `if`：
+`github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.action == 'ci')`。
+也就是说**光推 main 验证不到 APK 与 E2E**，要覆盖全部 6 个校验作业必须走 PR 或手动 `action=ci`。
+
+#### run #1 结果：3 绿 1 红
+
+| 作业 | 结果 |
+| --- | --- |
+| 移动端 analyze + test | success |
+| 生产镜像构建 | success |
+| 前端构建 | success |
+| 后端测试（pytest 全量） | **failure**（步骤「全量测试」） |
+
+#### 红灯根因：`test_cpu_and_network_need_two_samples` 是 flaky 用例
+
+不是产品缺陷，是用例假设错了。证据链：
+
+| 步骤 | 观察 |
+| --- | --- |
+| 同一 commit 连跑两遍 | 第一遍 `1 failed, 611 passed`；第二遍 `612 passed` —— 偶发 |
+| 单独跑该用例 | 通过（冷启动时第一次 `host_snapshot()` 较慢，恰好跨过时间片） |
+| 实测 `psutil.cpu_times()` 粒度 | 背靠背调用 20 次，**18 次 `delta <= 0`**；`gap=0.0s → delta=0.000000`，`gap=0.02s → 0.531250` |
+
+机制：`_cpu_percent()` 在 `total_delta <= 0` 时**按设计返回 `None`**（首次无基准，不编数），
+而用例在两次 `host_snapshot()` 之间没有任何等待 —— 只要两次调用落在同一个计数器时间片里就必然拿到 `None`。
+Linux `/proc/stat` 的 USER_HZ 是 10ms 粒度（Windows 约 15.6ms），所以在 CI 上更容易踩到。
+
+修复（`tests/test_system_metrics.py`）：两次采样之间等计数器真正推进（最多 20×20ms），
+断言内容一条没改，**服务端行为不动**。改后连跑两遍全量均 `612 passed, 26 subtests passed`。
+
+#### PR run #3：8 个作业全貌
+
+push 只覆盖 4 个作业，所以另开 PR（`fix/flaky-cpu-sample-test` → `main`）走 `pull_request` 事件，
+才把**从没跑过**的「移动端 APK 构建」与「前端 E2E」拉起来。8 个作业全部创建：
+
+| 作业 | 结果 | 耗时 |
+| --- | --- | --- |
+| 移动端 analyze + test | success | 41s |
+| 前端构建 | success | 1m9s |
+| 生产镜像构建 | success | 52s |
+| 移动端 APK 构建 | **success**（首次实跑，一次过） | 4m32s |
+| 后端测试（pytest 全量） | **failure** | 33s（失败步骤本身 0s） |
+| 前端 E2E | **failure** | 9m33s |
+| 发布到部署主机 | skipped | — |
+| 回滚部署主机 | skipped | — |
+
+#### 失败一：后端测试 —— `pytest` 根本没装
+
+```
+Run python -m pytest tests/ -q
+/opt/hostedtoolcache/Python/3.14.7/x64/bin/python: No module named pytest
+Error: Process completed with exit code 1.
+```
+
+`backend/requirements.txt` 是**生产依赖**，不含 pytest；CI 装的正是它，所以命令 0 秒就退出
+（失败步骤耗时 0s —— 根本没跑到用例）。本地能跑只是因为全局解释器装了 pytest 9.1.1，
+与用例、与此前那个 flaky 测试都无关。
+
+修复：新增 `backend/requirements-dev.txt`（`-r requirements.txt` + `pytest>=9.0`），
+CI 的后端作业改成装它（pip 缓存键一并加上该文件）。生产镜像仍只装 `requirements.txt`。
+
+#### 失败二：前端 E2E —— 4 failed / 3 flaky / 34 passed
+
+| 失败用例 | 报错 |
+| --- | --- |
+| `realtime-push.spec.js:44` 令牌无效以 4401 关闭 | `Expected: 4401, Received: 1006` |
+| `realtime-push.spec.js:53` 带令牌按令牌身份回话 | `应认证成功：{"ok":false,"code":1006}` |
+| `realtime-push.spec.js:64` 推送后大屏立即刷新 | `Timeout 10000ms`，推送没到 |
+| `data-screen.spec.js:230` 3D 场景建筑点击下钻 | `page.waitForURL` 超时（撞上 90s 用例超时） |
+
+3 个 flaky（重试通过，不计失败）：`audit-log.spec.js:15`、`data-screen.spec.js:178`、
+`system-monitor.spec.js:10`（磁盘值与页面值比对 —— 与刚修的 CPU 那个同类）。
+
+**WebSocket 的 3 个失败是同一根因，而且本地必过**：本机用与 CI 相同的 Node 20 + Playwright 1.63
+跑 `e2e/realtime-push.spec.js` 是 `3 passed`。CI 拿到的是 **1006（异常关闭，没拿到关闭帧）**，
+即连接在到达后端前就断了 —— 而 HTTP 走同一个 Vite 代理是正常的（同批次的登录、大屏数据请求全 200）。
+本轮先给用例装上诊断：失败时同时探一次「经 Vite 代理」与「直连后端 8010」，并把
+`wasClean` / `readyState` / `onerror` 写进断言消息，下一轮 CI 就能直接判定断在代理还是后端。
+
+**3D 下钻不是环境问题，是用例自己太慢**：原实现先扫完整张画布（9×7＝63 次 move + 读 cursor）
+再回头点第一个命中点。CI 上这一扫要几十秒，把 90s 用例预算耗光；而且场景每帧都在渲染，
+早先记下的坐标会漂移，回头点很可能已经落空。已改成「找到就立刻点」（命中即点，并在每轮重新量一次
+`boundingBox`），整体给 45s 预算。本地回归 `4 passed (24.7s)`，其中 3D 用例 **14.5s**。
+
+#### PR run #5：后端转绿，WebSocket 的根因是**生产依赖缺失**
+
+装上测试期依赖后 `后端测试` 直接 **success（67s）**，8 个作业里 7 个绿/按设计跳过，只剩 E2E 红。
+
+上一轮加的诊断给出了决定性证据 —— **走代理和直连后端同时失败**：
+
+```
+经代理： ws://127.0.0.1:5273/ws/notifications →
+        {"ok":false,"code":1006,"wasClean":false,"readyState":3,"sawError":true}
+直连后端：ws://127.0.0.1:8010/ws/notifications →
+        {"ok":false,"code":1006,"wasClean":false,"readyState":3,"sawError":true}
+```
+
+`sawError:true` + `readyState:3` 说明**握手就没成功**，与 Vite 代理无关。顺着查依赖：
+
+| 环境 | WebSocket 实现 |
+| --- | --- |
+| 本机（全局 Python） | `websockets 16.0` + `wsproto 1.3.2` 都在 → WS 正常，本地三个用例恒过 |
+| `requirements.txt` | 只有 `uvicorn>=0.35.0`，**既没有 `websockets` 也没有 `wsproto`** |
+| 生产 Dockerfile | `COPY backend/requirements.txt` + `pip install -r requirements.txt` → 同样没有 |
+
+`pip install --dry-run -r requirements.txt` 的实证（修复前）：
+
+```
+Would install ... uvicorn-0.53.0      ← 只有 uvicorn，列表里没有 websockets / wsproto
+```
+
+uvicorn 自身不带 WS 协议实现，缺了它 `/ws/notifications` 的升级握手必然失败，浏览器侧就是
+`onerror` + 1006。**所以这不只是 CI 问题，而是生产缺陷**：按当前 Dockerfile 构建的镜像里，
+Web 端大屏实时推送与移动端 WebSocket 全都连不上，而且这个缺口从没被任何单测覆盖
+（后端 WS 用例走 `TestClient` 的进程内 ASGI 传输，不需要真实 WS 实现）。
+
+修复（`backend/requirements.txt`）：补 `websockets>=16.0`。刻意不引 `uvicorn[standard]` ——
+那会连带 `httptools` / `uvloop` / `watchfiles`，给镜像构建加不必要的原生编译面。
+
+另两个 E2E 失败（本轮一并修）：
+
+| 用例 | 现象 | 改动 |
+| --- | --- | --- |
+| `audit-log.spec.js:15` | `login()` 里 `waitForURL(/dashboard/)` 超时 30s；重试时又报 `Execution context was destroyed`（登录后应用仍在跳转） | `login()` 超时提到 60s（CI 首次访问要等 Vite 现场转译整个应用）；`currentToken()` 改用 `waitForFunction`，跨导航重试后再取 token |
+| `data-screen.spec.js:230` | 改成「命中即点」后，点击已跳转而画布从 DOM 消失，下一次 `canvas.evaluate` 等 20s 超时 | 读 cursor 加 `.catch(() => '')`（读不到当未命中）；点击后用 `waitForURL(..., 1500)` 等导航落地 |
+
+本地回归：`realtime-push + data-screen + audit-log` → **12 passed（1 flaky，非改动项）**；
+并把本机 `websockets` 升到 CI 会装的 17.1 再跑一次 WS 用例 → `3 passed`，确认版本组合没问题。
+
+#### run #7：全绿
+
+补上 `websockets` 后同一分支再跑一轮（`a7313ac`），8 个作业里 6 个 success、2 个按设计 skipped：
+
+| 作业 | 结果 | 耗时 |
+| --- | --- | --- |
+| 后端测试（pytest 全量） | success | 68s |
+| 前端构建 | success | 51s |
+| 移动端 analyze + test | success | 47s |
+| 生产镜像构建 | success | 44s |
+| 移动端 APK 构建 | success | 363s |
+| **前端 E2E** | **success** | 477s（用例步骤 **404s**；上一轮是 586s 且失败） |
+| 发布到部署主机 | skipped | — |
+| 回滚部署主机 | skipped | — |
+
+三个 WS 用例在 CI 里**首次通过**；E2E 用例步骤耗时也从 586s 降到 404s —— 3D 用例不再空等
+90s 超时、audit-log 不再重试。
+
+至此 PR #1 上四项修复全部经真实 CI 验证：
+
+| # | 修复 | 首次通过 |
+| --- | --- | --- |
+| 1 | `test_cpu_and_network_need_two_samples` 偶发失败（计数器粒度） | run #3 起 |
+| 2 | 后端测试作业缺 pytest（`requirements-dev.txt`） | run #5 起 |
+| 3 | **WebSocket 生产依赖缺失（`websockets>=16.0`）** | run #7 起 |
+| 4 | E2E 的 login 冷启动超时与 3D 扫描导航竞态 | run #7 起 |
+
+> 仍未实跑的只剩 `deploy` / `rollback`：两者要 `workflow_dispatch` + 仓库配置
+> `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH` 四个 Secrets，且本机没有
+> 可用的部署主机，因此这两个作业目前只有「结构上存在 + 守卫步骤会明确报缺哪个 Secret」的保证。
+
+#### 查 Actions 日志的办法
+
+`/actions/jobs/{id}/logs` 匿名访问返回 `Must have admin rights`，`workflow_dispatch` 也要 token。
+可行路径：**在内置浏览器里登录 GitHub 后看 Web UI 的作业页面** ——
+每个步骤是 `<details class="CheckStep">`，失败步骤默认展开，日志正文就在 DOM 里
+（长日志分段渲染，需要边滚边取）。本次两个失败的根因都是这么读出来的。
+
+#### 本轮遗留
+
+- 仓库当前为 **public**，代码与 `docs/`（含审计报告、测试报告、截图）均已公开；如需转私有：
+  Settings → 最下方 Danger Zone → Change repository visibility。
+- E2E 的 flaky 用例尚未加固（重试可过，不阻塞流水线）：`data-screen.spec.js:129/178`、
+  `system-monitor.spec.js:10` 等，均为「本地采样值 vs 页面值比对」或长等待型。
+- **生产镜像需要重新构建**才能带上 `websockets`；正在跑的部署若依赖实时推送，升级后要验证一次
+  `/ws/notifications` 能正常握手。
+- 本机访问 GitHub 要看 Clash Verge 的状态：它开着时 DNS 会把 `github.com` 解析成 fake-ip
+  （`198.18.0.57`）而系统代理常是关的（`ProxyEnable=0`），此时直连必然 TLS 握手失败，
+  `git push` 前要先 `$env:HTTPS_PROXY="http://127.0.0.1:7897"`（或把 Clash 的「系统代理」打开）；
+  它关掉时直连正常，不需要代理。
 
