@@ -1466,6 +1466,51 @@ CI 的后端作业改成装它（pip 缓存键一并加上该文件）。生产�
 早先记下的坐标会漂移，回头点很可能已经落空。已改成「找到就立刻点」（命中即点，并在每轮重新量一次
 `boundingBox`），整体给 45s 预算。本地回归 `4 passed (24.7s)`，其中 3D 用例 **14.5s**。
 
+#### PR run #5：后端转绿，WebSocket 的根因是**生产依赖缺失**
+
+装上测试期依赖后 `后端测试` 直接 **success（67s）**，8 个作业里 7 个绿/按设计跳过，只剩 E2E 红。
+
+上一轮加的诊断给出了决定性证据 —— **走代理和直连后端同时失败**：
+
+```
+经代理： ws://127.0.0.1:5273/ws/notifications →
+        {"ok":false,"code":1006,"wasClean":false,"readyState":3,"sawError":true}
+直连后端：ws://127.0.0.1:8010/ws/notifications →
+        {"ok":false,"code":1006,"wasClean":false,"readyState":3,"sawError":true}
+```
+
+`sawError:true` + `readyState:3` 说明**握手就没成功**，与 Vite 代理无关。顺着查依赖：
+
+| 环境 | WebSocket 实现 |
+| --- | --- |
+| 本机（全局 Python） | `websockets 16.0` + `wsproto 1.3.2` 都在 → WS 正常，本地三个用例恒过 |
+| `requirements.txt` | 只有 `uvicorn>=0.35.0`，**既没有 `websockets` 也没有 `wsproto`** |
+| 生产 Dockerfile | `COPY backend/requirements.txt` + `pip install -r requirements.txt` → 同样没有 |
+
+`pip install --dry-run -r requirements.txt` 的实证（修复前）：
+
+```
+Would install ... uvicorn-0.53.0      ← 只有 uvicorn，列表里没有 websockets / wsproto
+```
+
+uvicorn 自身不带 WS 协议实现，缺了它 `/ws/notifications` 的升级握手必然失败，浏览器侧就是
+`onerror` + 1006。**所以这不只是 CI 问题，而是生产缺陷**：按当前 Dockerfile 构建的镜像里，
+Web 端大屏实时推送与移动端 WebSocket 全都连不上，而且这个缺口从没被任何单测覆盖
+（后端 WS 用例走 `TestClient` 的进程内 ASGI 传输，不需要真实 WS 实现）。
+
+修复（`backend/requirements.txt`）：补 `websockets>=16.0`。刻意不引 `uvicorn[standard]` ——
+那会连带 `httptools` / `uvloop` / `watchfiles`，给镜像构建加不必要的原生编译面。
+
+另两个 E2E 失败（本轮一并修）：
+
+| 用例 | 现象 | 改动 |
+| --- | --- | --- |
+| `audit-log.spec.js:15` | `login()` 里 `waitForURL(/dashboard/)` 超时 30s；重试时又报 `Execution context was destroyed`（登录后应用仍在跳转） | `login()` 超时提到 60s（CI 首次访问要等 Vite 现场转译整个应用）；`currentToken()` 改用 `waitForFunction`，跨导航重试后再取 token |
+| `data-screen.spec.js:230` | 改成「命中即点」后，点击已跳转而画布从 DOM 消失，下一次 `canvas.evaluate` 等 20s 超时 | 读 cursor 加 `.catch(() => '')`（读不到当未命中）；点击后用 `waitForURL(..., 1500)` 等导航落地 |
+
+本地回归：`realtime-push + data-screen + audit-log` → **12 passed（1 flaky，非改动项）**；
+并把本机 `websockets` 升到 CI 会装的 17.1 再跑一次 WS 用例 → `3 passed`，确认版本组合没问题。
+
 #### 查 Actions 日志的办法
 
 `/actions/jobs/{id}/logs` 匿名访问返回 `Must have admin rights`，`workflow_dispatch` 也要 token。
@@ -1477,8 +1522,10 @@ CI 的后端作业改成装它（pip 缓存键一并加上该文件）。生产�
 
 - 仓库当前为 **public**，代码与 `docs/`（含审计报告、测试报告、截图）均已公开；如需转私有：
   Settings → 最下方 Danger Zone → Change repository visibility。
-- E2E 的 3 个 flaky 用例尚未加固（重试可过，不阻塞流水线）。
-- WebSocket 在 CI 的根因待下一轮 CI 的诊断输出确认（本地无法复现）。
+- E2E 的 flaky 用例尚未加固（重试可过，不阻塞流水线）：`data-screen.spec.js:129/178`、
+  `system-monitor.spec.js:10` 等，均为「本地采样值 vs 页面值比对」或长等待型。
+- **生产镜像需要重新构建**才能带上 `websockets`；正在跑的部署若依赖实时推送，升级后要验证一次
+  `/ws/notifications` 能正常握手。
 - 本机 `git push` 需走代理：DNS 把 `github.com` 解析成 Clash Verge 的 fake-ip（`198.18.0.57`），
   而系统代理是关的（`ProxyEnable=0`），直连必然 TLS 握手失败。推送前先
   `$env:HTTPS_PROXY="http://127.0.0.1:7897"`，或在 Clash Verge 里重新打开「系统代理」。

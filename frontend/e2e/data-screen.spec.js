@@ -264,11 +264,13 @@ test.describe('数据大屏', () => {
           const x = box.x + (box.width * ix) / 10
           const y = box.y + (box.height * iy) / 8
           await page.mouse.move(x, y)
-          const cursor = await canvas.evaluate(el => el.style.cursor)
+          // 画布可能因为上一次点击已跳转而从 DOM 消失，读不到就当这次没命中（别让它把用例炸掉）
+          const cursor = await canvas.evaluate(el => el.style.cursor).catch(() => '')
           if (cursor !== 'pointer') continue
           hovered += 1
           await page.mouse.click(x, y)
-          await page.waitForTimeout(500)
+          // 点击可能触发路由跳转：等一小段让导航落地，跳了就结束，没跳就继续扫
+          await page.waitForURL(/\/building-detail\/\d+/, { timeout: 1500 }).catch(() => {})
         }
       }
     }
