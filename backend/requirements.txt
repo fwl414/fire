@@ -1,5 +1,9 @@
 fastapi>=0.119.0
 uvicorn>=0.35.0
+# WebSocket 实现：uvicorn 本身不带 WS 协议实现，缺了它 `/ws/notifications` 的升级握手必然失败
+# （浏览器侧表现为 onerror + 关闭码 1006），实时推送整条链路不可用。
+# 只补 websockets，不引 uvicorn[standard]（那会连带 httptools/uvloop/watchfiles，增加镜像构建面）
+websockets>=16.0
 pydantic>=2.12.0,<3.0.0
 SQLAlchemy>=2.0.40
 alembic>=1.13.0
