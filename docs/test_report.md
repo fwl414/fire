@@ -1340,3 +1340,83 @@ GET /api/devices/2/detail                              → 200
 - `flutter run` 在 ASCII 联接目录（`F:\mob_ascii`）下偶发 Kotlin 编译守护进程崩溃
   （`e: Daemon compilation failed: null`），本轮改用已构建好的 release APK 绕过，未根治
 
+### 13.11 GitHub 流水线首次实跑（2026-09-19 追加）
+
+12.5 的遗留「流水线尚未在 GitHub 上实跑」到此关闭：把仓库推上 GitHub，真跑了一次。
+
+#### 仓库与首次推送
+
+| 项 | 值 |
+| --- | --- |
+| 远端 | `https://github.com/fwl414/fire`（public） |
+| 仓库根 | 项目目录本身，`git init -b main` |
+| 首次提交 | `6b7ba62` —— 712 文件 / 197,780 行 |
+| 认证 | 系统级 `credential.helper=manager`（Git Credential Manager），无需 PAT |
+
+入库前补的 `.gitignore`（原有规则只挡了 `node_modules/` 与 `fire_ai_agent*.db`，漏得不少）：
+
+| 被挡住的 | 原因 |
+| --- | --- |
+| `.env.staging` | **含真实密钥**（Postgres 口令、`JWT_SECRET_KEY`、`METRICS_TOKEN`、Grafana 口令），文件头自己就写着「请勿提交到版本库」 |
+| `*.db` / `*.db.*` / `backend/backups/` / `backend/data/_cleanup_backup_*/` | 运行库、备份、CI 结构校验库 |
+| `backend/data/reports/`、`notification_read.json` | 运行时生成的巡检报告与通知已读状态 |
+| `frontend/node_modules_old/` | 历史遗留旧依赖（含 9.45MB `esbuild.exe`） |
+| `frontend/test-results/`、`playwright-report/` | Playwright 产物（各含 16MB `trace.zip`） |
+| `backend/data/_cleanup_backup_*/fire_ai_agent.db.backup` 等 | `.db.*` 变体一律排除 |
+
+另按「已暂存内容」扫了一遍硬编码密钥模式（`password|secret|token|api_key` + 16 位以上字面量）：
+17 个命中全部是测试夹具与文档占位符（如 `"********"`），无真实凭据。
+
+#### 触发覆盖：push 只跑 4 个作业
+
+`ci-cd.yml` 共 8 个作业，但 **push 事件只覆盖 4 个** —— 这是首次实跑才看清的：
+
+| 作业 | push | pull_request | workflow_dispatch |
+| --- | --- | --- | --- |
+| 后端测试（pytest 全量） | ✅ | ✅ | ✅（action=ci） |
+| 前端构建 | ✅ | ✅ | ✅（action=ci） |
+| 移动端 analyze + test | ✅ | ✅ | ✅（action=ci） |
+| 生产镜像构建 | ✅ | ✅ | ✅（action=ci） |
+| 移动端 APK 构建 | ⏭ | ✅ | ✅（action=ci） |
+| 前端 E2E | ⏭ | ✅ | ✅（action=ci） |
+| 发布到部署主机 | ⏭ | ⏭ | 仅 action=deploy |
+| 回滚部署主机 | ⏭ | ⏭ | 仅 action=rollback |
+
+原因在 `ci-cd.yml:143` 与 `:196` 的 `if`：
+`github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.action == 'ci')`。
+也就是说**光推 main 验证不到 APK 与 E2E**，要覆盖全部 6 个校验作业必须走 PR 或手动 `action=ci`。
+
+#### run #1 结果：3 绿 1 红
+
+| 作业 | 结果 |
+| --- | --- |
+| 移动端 analyze + test | success |
+| 生产镜像构建 | success |
+| 前端构建 | success |
+| 后端测试（pytest 全量） | **failure**（步骤「全量测试」） |
+
+#### 红灯根因：`test_cpu_and_network_need_two_samples` 是 flaky 用例
+
+不是产品缺陷，是用例假设错了。证据链：
+
+| 步骤 | 观察 |
+| --- | --- |
+| 同一 commit 连跑两遍 | 第一遍 `1 failed, 611 passed`；第二遍 `612 passed` —— 偶发 |
+| 单独跑该用例 | 通过（冷启动时第一次 `host_snapshot()` 较慢，恰好跨过时间片） |
+| 实测 `psutil.cpu_times()` 粒度 | 背靠背调用 20 次，**18 次 `delta <= 0`**；`gap=0.0s → delta=0.000000`，`gap=0.02s → 0.531250` |
+
+机制：`_cpu_percent()` 在 `total_delta <= 0` 时**按设计返回 `None`**（首次无基准，不编数），
+而用例在两次 `host_snapshot()` 之间没有任何等待 —— 只要两次调用落在同一个计数器时间片里就必然拿到 `None`。
+Linux `/proc/stat` 的 USER_HZ 是 10ms 粒度（Windows 约 15.6ms），所以在 CI 上更容易踩到。
+
+修复（`tests/test_system_metrics.py`）：两次采样之间等计数器真正推进（最多 20×20ms），
+断言内容一条没改，**服务端行为不动**。改后连跑两遍全量均 `612 passed, 26 subtests passed`。
+
+#### 本轮遗留
+
+- 查看 Actions 日志需要认证：`/actions/jobs/{id}/logs` 匿名访问返回 **403**，`workflow_dispatch`
+  同样需要 token。所以「CI 那次失败就是这个用例」是强推断（本地同一用例复现 + 机制在 Linux 更显著），
+  没有直接读到日志 —— 推 PR 重跑一次即可闭环验证。
+- 仓库当前为 **public**，代码与 `docs/`（含审计报告、测试报告、截图）均已公开；如需转私有：
+  Settings → 最下方 Danger Zone → Change repository visibility。
+
