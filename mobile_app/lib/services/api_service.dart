@@ -119,6 +119,11 @@ class ApiService {
 
   // ---------------- 设备 / 巡检记录 ----------------
 
+  /// 建筑列表：后端 `/api/buildings` 返回**裸数组**（不是 `{items,...}` 分页体），
+  /// 字段为 `id / building_code / building_name / building_type / address / risk_level …`。
+  Future<List<Map<String, dynamic>>> buildings() async =>
+      asMapList(await client.get('/api/buildings'));
+
   Future<Map<String, dynamic>> devices({
     int page = 1,
     int pageSize = 50,
@@ -143,6 +148,14 @@ class ApiService {
   /// 巡检记录详情（含 report 正文，列表接口不返回）
   Future<Map<String, dynamic>> recordDetail(int recordId) async =>
       asMap(await client.get('/api/records/$recordId'));
+
+  /// 巡检记录现场照片的下载请求（**需要 Bearer token**，不做匿名访问）。
+  ///
+  /// 主库巡检记录（数字 id）与运行库巡检档案（字符串 id，如 `REC-M-1`）都支持；
+  /// `index` 用于取第 N 张图；记录没有图片或文件缺失时后端返回 404，
+  /// 调用方必须用 `errorBuilder` 兜底成「暂无图片证据」占位。
+  BinaryRequest recordImageRequest(Object recordId, {int index = 0}) =>
+      client.binaryRequest('/api/records/$recordId/image', query: {'index': index});
 
   // ---------------- 告警 ----------------
 
@@ -241,4 +254,147 @@ class ApiService {
   Future<void> markAllNotificationsRead() async {
     await client.postJson('/api/notifications/mark-all-read');
   }
+
+  /// 单条通知已读：`POST /api/notifications/{id}/read`，
+  /// 返回 `{message, id, read_count}`；通知 id 是字符串（如 `high-order-WO-…`）。
+  Future<Map<String, dynamic>> markNotificationRead(String notificationId) async =>
+      asMap(await client.postJson(
+        '/api/notifications/${Uri.encodeComponent(notificationId)}/read',
+      ));
+
+  // ---------------- 巡检档案（V1.0.0 报告与档案） ----------------
+
+  /// 档案列表：后端返回**裸数组**（不是 `{items,total}`），
+  /// 关键词 / 风险等级 / 复查状态 / 归档状态 / 日期区间都**由服务端过滤**。
+  Future<List<Map<String, dynamic>>> archives({
+    String keyword = '',
+    String riskLevel = '',
+    String reviewStatus = '',
+    String archiveStatus = '',
+    String startDate = '',
+    String endDate = '',
+    int limit = 200,
+  }) async =>
+      asMapList(await client.get('/api/inspection-archives', query: {
+        'keyword': keyword,
+        'risk_level': riskLevel,
+        'review_status': reviewStatus,
+        'archive_status': archiveStatus,
+        'start_date': startDate,
+        'end_date': endDate,
+        'limit': limit,
+      }));
+
+  /// 档案概览：`archive_count / report_count / high_risk_count / pending_review_count /
+  /// workorder_count / closed_workorder_count / closed_loop_rate /
+  /// risk_distribution / review_distribution / top_hazards / monthly_trend`
+  Future<Map<String, dynamic>> archiveDashboard() async =>
+      asMap(await client.get('/api/inspection-archives/dashboard'));
+
+  /// 档案详情。`record_id` 是**字符串**（`REC-M-1`、`DEMO-INSPECTION-001`），
+  /// 字段比列表多了 `quality / hazard_details / rag_references / closure_status /
+  /// archive_timeline / before_after_images` 等。
+  Future<Map<String, dynamic>> archiveDetail(String recordId) async =>
+      asMap(await client.get('/api/inspection-archives/${Uri.encodeComponent(recordId)}'));
+
+  // ---------------- 批量巡检任务 ----------------
+
+  /// 批量巡检任务列表。注意后端**只**返回
+  /// `id/task_name/building_name/total_count/completed_count/status/priority/
+  /// inspector/created_at/started_at/completed_at`（没有进度百分比、没有 scheduled_time）。
+  Future<Map<String, dynamic>> batchInspections({
+    String status = '',
+    String buildingId = '',
+    int limit = 50,
+  }) async =>
+      asMap(await client.get('/api/batch-inspection/list', query: {
+        'status': status,
+        'building_id': buildingId,
+        'limit': limit,
+      }));
+
+  /// 批量巡检任务详情：含 `inspection_items`（原始巡检点）与 `results`（逐点结果）、`progress`。
+  Future<Map<String, dynamic>> batchInspectionDetail(String taskId) async =>
+      asMap(await client.get('/api/batch-inspection/${Uri.encodeComponent(taskId)}'));
+
+  /// 批量巡检任务进度：`progress / progress_message / current_item / completed_count /
+  /// total_count / high_risk_count / medium_risk_count / low_risk_count / error`
+  /// （后端没有「成功/失败条数」字段，前端不编造）。
+  Future<Map<String, dynamic>> batchInspectionProgress(String taskId) async =>
+      asMap(await client.get(
+        '/api/batch-inspection/${Uri.encodeComponent(taskId)}/progress',
+      ));
+
+  /// 新建批量巡检任务（需要 `batch:create` 权限）。
+  /// 后端所有字段都有默认值：不传 `inspection_items` 时按楼宇通用清单生成 10 个点位。
+  Future<Map<String, dynamic>> createBatchInspection({
+    required String taskName,
+    String buildingName = '',
+    String inspector = '',
+    String priority = '中',
+  }) async =>
+      asMap(await client.postJson('/api/batch-inspection/create', body: {
+        'task_name': taskName,
+        'building_name': buildingName,
+        'inspector': inspector,
+        'priority': priority,
+      }));
+
+  // ---------------- 智能分析 ----------------
+
+  /// 每日安全简报；`date` 传 `YYYY-MM-DD`，不传时后端默认统计**昨天**。
+  Future<Map<String, dynamic>> dailyBrief({String date = ''}) async =>
+      asMap(await client.get('/api/intelligence/daily-brief', query: {'date': date}));
+
+  /// 设备故障诊断。`device_id` 是字符串且可空：带了（且属于本租户）后端会用设备台账
+  /// （投用年限 / 维保 / 最近上报）调整权重，`weight_basis` 为 `device_data`，否则退回知识库先验。
+  Future<Map<String, dynamic>> diagnoseDevice({
+    String deviceId = '',
+    String deviceName = '',
+    String deviceType = '',
+    String status = '故障',
+    String buildingName = '',
+  }) async =>
+      asMap(await client.postJson('/api/intelligence/diagnose-device', body: {
+        'device_id': deviceId,
+        'device_name': deviceName,
+        'device_type': deviceType,
+        'status': status,
+        'building_name': buildingName,
+      }));
+
+  // ---------------- 报告验真 ----------------
+
+  /// 报告验真：公开接口（`auth: false`），传报告编号或档案编号都可以。
+  Future<Map<String, dynamic>> verifyReport(String reportNo) async => asMap(
+        await client.get(
+          '/api/reports/verify/${Uri.encodeComponent(reportNo)}',
+          auth: false,
+        ),
+      );
+
+  /// 报告验真二维码：后端返回 PNG（同样是公开接口），
+  /// 交给 `Image.network` 时带上鉴权头没有副作用（`widgets/common.dart` 的用法一致）。
+  BinaryRequest reportVerifyQrRequest(String reportNo) => client.binaryRequest(
+        '/api/reports/verify-qr/${Uri.encodeComponent(reportNo)}',
+      );
+
+  // ---------------- 告警统计与合并 ----------------
+
+  /// 告警统计：**扁平**字段（没有 by_severity 之类的嵌套）——
+  /// `total/pending/processing/resolved/merged/escalated/critical/high/medium/low/
+  /// todayCount/thisWeek`，外加 `byType[{type,count}]` 与 `trend[{date,count}]`。
+  Future<Map<String, dynamic>> alertStatistics() async =>
+      asMap(await client.get('/api/alert/statistics'));
+
+  /// 合并告警：以 `primary_id` 为主告警，`duplicate_ids` 被合并（累加重复次数并标记 merged）。
+  /// 主告警不存在时后端返回 404，参数缺失返回 400，错误原因在 `detail` 里。
+  Future<Map<String, dynamic>> mergeAlerts({
+    required int primaryId,
+    required List<int> duplicateIds,
+  }) async =>
+      asMap(await client.postJson('/api/alerts/merge', body: {
+        'primary_id': primaryId,
+        'duplicate_ids': duplicateIds,
+      }));
 }

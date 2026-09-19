@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/api_client.dart';
 import '../services/api_service.dart';
 import '../services/app_services.dart';
 import '../widgets/common.dart';
@@ -61,7 +62,7 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
     final steps = _agentSteps(data['agent_steps']);
     final suggestion = textOf(data['suggestion']);
     final report = textOf(data['report']);
-    final imageNote = _imageNote(data['image_path']);
+    final images = _imageRequests(data);
     final model = [
       textOf(data['model_provider']),
       textOf(data['model_name']),
@@ -209,29 +210,36 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
               ],
             ),
           ),
-        if (imageNote.isNotEmpty)
-          SectionCard(
-            title: '现场照片',
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.image_outlined, size: 16, color: Color(0xFF94A3B8)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    imageNote,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF475569),
-                      height: 1.5,
-                    ),
-                  ),
+        SectionCard(
+          title: '现场照片',
+          child: images.isEmpty
+              ? const EvidencePlaceholder(height: 120)
+              : Column(
+                  children: [
+                    for (var i = 0; i < images.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 8),
+                      EvidenceImage(request: images[i]),
+                    ],
+                  ],
                 ),
-              ],
-            ),
-          ),
+        ),
       ],
     );
+  }
+
+  /// 记录里可能有多张图：主库巡检记录只有单张 `image_path`，
+  /// 运行库档案带 `image_paths` 列表，多张时按 index 依次取。
+  /// 图片接口需要 Bearer token，没有图片/文件缺失时返回 404，交给 EvidenceImage 兜底。
+  List<BinaryRequest> _imageRequests(Map<String, dynamic> data) {
+    final paths = asList(data['image_paths']);
+    final count = paths.isNotEmpty
+        ? paths.length
+        : (intOf(data['image_count']) > 0
+            ? intOf(data['image_count'])
+            : (textOf(data['image_path']).isNotEmpty ? 1 : 0));
+    return [
+      for (var i = 0; i < count; i++) api.recordImageRequest(widget.id, index: i),
+    ];
   }
 }
 
@@ -249,13 +257,3 @@ String _stepText(dynamic raw) {
 
 List<String> _agentSteps(dynamic raw) =>
     asList(raw).map(_stepText).where((text) => text.isNotEmpty).toList();
-
-/// 后端没有对外图片下载接口，`image_path` 只能做文字说明，不能当图片 URL 加载。
-String _imageNote(dynamic raw) {
-  final path = textOf(raw);
-  if (path.isEmpty) return '';
-  final segments =
-      path.split(RegExp(r'[\\/]')).where((segment) => segment.isNotEmpty).toList();
-  final fileName = segments.isEmpty ? path : segments.last;
-  return '已保存于服务端（$fileName）';
-}

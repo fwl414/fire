@@ -31,7 +31,7 @@
         <el-card class="stat-card" shadow="hover">
           <div class="stat-icon critical"></div>
           <div class="stat-content">
-            <div class="stat-value danger">{{ stats.by_severity?.critical || 0 }}</div>
+            <div class="stat-value danger">{{ stats.critical || 0 }}</div>
             <div class="stat-label">严重告警</div>
           </div>
         </el-card>
@@ -40,17 +40,17 @@
         <el-card class="stat-card" shadow="hover">
           <div class="stat-icon high">⚠️</div>
           <div class="stat-content">
-            <div class="stat-value warning">{{ stats.by_severity?.high || 0 }}</div>
+            <div class="stat-value warning">{{ stats.high || 0 }}</div>
             <div class="stat-label">高级告警</div>
           </div>
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card class="stat-card" shadow="hover">
-          <div class="stat-icon auto"></div>
+          <div class="stat-icon pending"></div>
           <div class="stat-content">
-            <div class="stat-value success">{{ stats.auto_workorder_count || 0 }}</div>
-            <div class="stat-label">自动工单率 {{ stats.auto_workorder_rate || 0 }}%</div>
+            <div class="stat-value danger">{{ stats.pending || 0 }}</div>
+            <div class="stat-label">待处置</div>
           </div>
         </el-card>
       </el-col>
@@ -62,29 +62,25 @@
         <span class="tab-count">{{ stats.total || 0 }}</span>
       </div>
       <div class="status-tab" :class="{ active: statusTab === 'pending' }" @click="statusTab = 'pending'">
-        待确认
-        <span class="tab-count danger">{{ pendingCount }}</span>
+        待处置
+        <span class="tab-count danger">{{ stats.pending || 0 }}</span>
       </div>
       <div class="status-tab" :class="{ active: statusTab === 'processing' }" @click="statusTab = 'processing'">
         处置中
-        <span class="tab-count warning">{{ processingCount }}</span>
+        <span class="tab-count warning">{{ stats.processing || 0 }}</span>
       </div>
       <div class="status-tab" :class="{ active: statusTab === 'resolved' }" @click="statusTab = 'resolved'">
-        已处理
-        <span class="tab-count success">{{ resolvedCount }}</span>
+        已处置
+        <span class="tab-count success">{{ stats.resolved || 0 }}</span>
       </div>
     </div>
 
     <el-card class="table-card">
       <div class="table-toolbar">
         <div class="toolbar-left">
-          <el-button type="danger" @click="batchConfirm" :disabled="!selectedAlerts.length">
+          <el-button type="primary" @click="batchStartProcess" :disabled="!selectedAlerts.length">
             <el-icon><Check /></el-icon>
-            批量确认
-          </el-button>
-          <el-button type="primary" @click="batchDispatch" :disabled="!selectedAlerts.length">
-            <el-icon><Promotion /></el-icon>
-            批量派单
+            批量开始处置
           </el-button>
         </div>
         <div class="toolbar-right">
@@ -101,25 +97,25 @@
 
       <el-table :data="filteredAlerts" v-loading="loading" stripe style="width: 100%" @selection-change="onSelectionChange">
         <el-table-column type="selection" width="50" />
-        <el-table-column prop="alert_id" label="告警编号" width="130" />
+        <el-table-column prop="alert_code" label="告警编号" width="130" />
         <el-table-column label="告警级别" width="90">
           <template #default="{ row }">
             <div class="severity-badge" :class="row.severity">
-              {{ severityText(row.severity) }}
+              {{ row.severity_label || row.severity }}
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="alert_name" label="告警类型" width="120">
+        <el-table-column prop="alert_type_label" label="告警类型" width="120">
           <template #default="{ row }">
-            <el-tag :type="severityType(row.severity)" size="small" effect="light">{{ row.alert_name }}</el-tag>
+            <el-tag :type="severityType(row.severity)" size="small" effect="light">{{ row.alert_type_label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="device_id" label="设备" width="120" />
+        <el-table-column prop="device_name" label="设备" width="120" />
         <el-table-column prop="building_name" label="位置" min-width="130" />
         <el-table-column label="处置状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="statusTagType(row.process_status)" size="small" effect="dark">
-              {{ statusText(row.process_status) }}
+            <el-tag :type="statusTagType(row.status)" size="small" effect="dark">
+              {{ row.status_label || statusText(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -127,8 +123,8 @@
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="viewDetail(row)">详情</el-button>
-            <el-button v-if="row.process_status === 'pending'" link type="success" @click="confirmAlert(row)">确认</el-button>
-            <el-button v-if="row.process_status === 'confirmed' || row.process_status === 'pending'" link type="warning" @click="dispatchAlert(row)">派单</el-button>
+            <el-button v-if="row.status === 'pending'" link type="success" @click="startProcess(row)">开始处置</el-button>
+            <el-button v-if="row.workorder_id" link type="warning" @click="goWorkorder(row.workorder_id)">关联工单</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -139,14 +135,14 @@
         <div class="detail-header">
           <div class="detail-title-row">
             <el-tag size="large" :type="severityType(currentAlert.severity)" effect="dark">
-              {{ severityText(currentAlert.severity) }}
+              {{ currentAlert.severity_label || currentAlert.severity }}
             </el-tag>
-            <span class="detail-alert-name">{{ currentAlert.alert_name }}</span>
-            <el-tag :type="statusTagType(currentAlert.process_status)" effect="light">
-              {{ statusText(currentAlert.process_status) }}
+            <span class="detail-alert-name">{{ currentAlert.alert_type_label }}</span>
+            <el-tag :type="statusTagType(currentAlert.status)" effect="light">
+              {{ currentAlert.status_label || statusText(currentAlert.status) }}
             </el-tag>
           </div>
-          <div class="detail-alert-id">{{ currentAlert.alert_id }}</div>
+          <div class="detail-alert-id">{{ currentAlert.alert_code }}</div>
         </div>
 
         <el-row :gutter="20">
@@ -154,48 +150,30 @@
             <div class="detail-section">
               <div class="section-title">基本信息</div>
               <el-descriptions :column="2" border size="small">
-                <el-descriptions-item label="设备编号">{{ currentAlert.device_id }}</el-descriptions-item>
-                <el-descriptions-item label="告警时间">{{ currentAlert.created_at }}</el-descriptions-item>
-                <el-descriptions-item label="告警位置" :span="2">{{ currentAlert.building_name }}</el-descriptions-item>
-                <el-descriptions-item label="风险等级">
-                  <el-tag size="small" :type="riskType(currentAlert.risk_level)">{{ currentAlert.risk_level }}</el-tag>
-                </el-descriptions-item>
-                <el-descriptions-item label="告警来源">物联网设备</el-descriptions-item>
+                <el-descriptions-item label="设备编号">{{ currentAlert.device_code || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="设备名称">{{ currentAlert.device_name || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="告警位置" :span="2">{{ dialogLocation }}</el-descriptions-item>
+                <el-descriptions-item label="告警值">{{ dialogAlertValue }}</el-descriptions-item>
+                <el-descriptions-item label="告警时间">{{ currentAlert.created_at || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="告警描述" :span="2">{{ currentAlert.description || '—' }}</el-descriptions-item>
               </el-descriptions>
             </div>
 
             <div class="detail-section">
-              <div class="section-title">处置流程</div>
-              <div class="process-flow">
-                <div v-for="(step, idx) in processSteps" :key="step.key" class="process-step" :class="{ active: step.active, done: step.done, current: step.current }">
-                  <div class="step-icon">
-                    <el-icon v-if="step.done"><CircleCheckFilled /></el-icon>
-                    <span v-else>{{ idx + 1 }}</span>
-                  </div>
-                  <div class="step-info">
-                    <div class="step-name">{{ step.name }}</div>
-                    <div class="step-time">{{ step.time || '—' }}</div>
-                    <div v-if="step.operator" class="step-operator">操作人：{{ step.operator }}</div>
-                  </div>
-                  <div v-if="idx < processSteps.length - 1" class="step-line"></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="detail-section" v-if="currentAlert.process_status !== 'pending'">
-              <div class="section-title">处置记录</div>
-              <el-timeline>
-                <el-timeline-item
-                  v-for="(record, idx) in processRecords"
-                  :key="idx"
-                  :type="record.type"
-                  :timestamp="record.time"
-                >
-                  <div class="record-title">{{ record.title }}</div>
-                  <div class="record-content">{{ record.content }}</div>
-                  <div v-if="record.operator" class="record-operator">— {{ record.operator }}</div>
-                </el-timeline-item>
-              </el-timeline>
+              <div class="section-title">处置情况</div>
+              <el-descriptions :column="2" border size="small">
+                <el-descriptions-item label="告警产生时间">{{ currentAlert.created_at || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="最近上报时间">{{ currentAlert.last_seen_at || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="重复次数">{{ currentAlert.repeat_count ?? 1 }} 次</el-descriptions-item>
+                <el-descriptions-item label="升级状态">
+                  <el-tag size="small" :type="currentAlert.escalated ? 'danger' : 'info'" effect="plain">
+                    {{ currentAlert.escalated ? '已升级' : '未升级' }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item v-if="currentAlert.handle_result" label="处置结论" :span="2">
+                  {{ currentAlert.handle_result }}
+                </el-descriptions-item>
+              </el-descriptions>
             </div>
           </el-col>
 
@@ -203,23 +181,14 @@
             <div class="detail-section">
               <div class="section-title">快速操作</div>
               <div class="quick-actions">
-                <el-button v-if="currentAlert.process_status === 'pending'" type="primary" style="width:100%;margin-bottom:10px" @click="confirmAlert(currentAlert)">
-                  <el-icon><Check /></el-icon>确认告警
+                <el-button v-if="currentAlert.status === 'pending'" type="primary" style="width:100%;margin-bottom:10px" @click="startProcess(currentAlert)">
+                  <el-icon><Check /></el-icon>开始处置
                 </el-button>
-                <el-button v-if="currentAlert.process_status === 'pending' || currentAlert.process_status === 'confirmed'" type="warning" style="width:100%;margin-bottom:10px" @click="dispatchAlert(currentAlert)">
-                  <el-icon><Promotion /></el-icon>派发工单
-                </el-button>
-                <el-button v-if="currentAlert.process_status === 'dispatched' || currentAlert.process_status === 'processing'" type="success" style="width:100%;margin-bottom:10px" @click="handleDispose">
+                <el-button v-if="currentAlert.status === 'pending' || currentAlert.status === 'processing'" type="success" style="width:100%;margin-bottom:10px" @click="handleDispose(currentAlert)">
                   <el-icon><Tools /></el-icon>现场处置
                 </el-button>
-                <el-button v-if="currentAlert.process_status === 'processed'" style="width:100%;margin-bottom:10px" @click="handleReview">
-                  <el-icon><View /></el-icon>复查确认
-                </el-button>
-                <el-button v-if="currentAlert.process_status === 'reviewed'" type="info" style="width:100%;margin-bottom:10px" @click="handleArchive">
-                  <el-icon><FolderChecked /></el-icon>归档结案
-                </el-button>
-                <el-button type="danger" plain style="width:100%" @click="handleFalseAlarm">
-                  <el-icon><Close /></el-icon>误报消除
+                <el-button v-if="currentAlert.workorder_id" type="warning" style="width:100%" @click="goWorkorder(currentAlert.workorder_id)">
+                  <el-icon><Tickets /></el-icon>查看关联工单
                 </el-button>
               </div>
             </div>
@@ -228,19 +197,18 @@
               <div class="section-title">关联信息</div>
               <div class="related-info">
                 <div class="related-item">
-                  <el-icon><VideoCamera /></el-icon>
-                  <span>关联视频：2路</span>
-                  <el-button link type="primary" size="small">查看</el-button>
+                  <el-icon><Tickets /></el-icon>
+                  <span v-if="currentAlert.workorder_id">关联工单 #{{ currentAlert.workorder_id }}</span>
+                  <span v-else>暂无关联工单</span>
+                  <el-button v-if="currentAlert.workorder_id" link type="primary" size="small" @click="goWorkorder(currentAlert.workorder_id)">查看</el-button>
+                </div>
+                <div class="related-item">
+                  <el-icon><Monitor /></el-icon>
+                  <span>设备：{{ currentAlert.device_code || currentAlert.device_name || '—' }}</span>
                 </div>
                 <div class="related-item">
                   <el-icon><OfficeBuilding /></el-icon>
-                  <span>附近设备：6个</span>
-                  <el-button link type="primary" size="small">查看</el-button>
-                </div>
-                <div class="related-item">
-                  <el-icon><User /></el-icon>
-                  <span>附近人员：3人</span>
-                  <el-button link type="primary" size="small">查看</el-button>
+                  <span>位置：{{ dialogLocation }}</span>
                 </div>
               </div>
             </div>
@@ -417,8 +385,7 @@
         </el-row>
       </div>
       <template #footer>
-        <el-button @click="detailDialog = false">关闭</el-button>
-        <el-button type="primary" @click="detailDialog = false">打印工单</el-button>
+        <el-button type="primary" @click="detailDialog = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -471,8 +438,7 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="showRectificationDialog = false">关闭</el-button>
-        <el-button type="primary" @click="confirmCreateWorkorder">确认创建工单</el-button>
+        <el-button type="primary" @click="showRectificationDialog = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -509,15 +475,16 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Refresh, Warning, Check, Promotion, CircleCheckFilled,
-  Tools, View, FolderChecked, Close, VideoCamera, OfficeBuilding, User,
-  ChatDotRound, MagicStick, TrendCharts, Collection, Files
+  Refresh, Warning, Check, Tools, Tickets, Monitor, OfficeBuilding,
+  ChatDotRound, MagicStick, Collection, Files
 } from '@element-plus/icons-vue'
-import { alertList, alertStatistics, alertProcess } from '../api'
+import { alertList, alertStatistics, alertProcess, updateAlertStatus, handleAlert } from '../api'
 import { analyzeAlert, generateRectificationPlan } from '@/api/intelligence'
 
+const router = useRouter()
 const loading = ref(false)
 const alerts = ref([])
 const stats = ref({})
@@ -547,41 +514,38 @@ const simulateForm = ref({
   building_name: '综合办公楼A座'
 })
 
-const pendingCount = computed(() => alerts.value.filter(a => a.process_status === 'pending').length)
-const processingCount = computed(() => alerts.value.filter(a => ['pending', 'confirmed', 'dispatched', 'processing'].includes(a.process_status)).length)
-const resolvedCount = computed(() => alerts.value.filter(a => a.process_status === 'resolved' || a.process_status === 'closed').length)
-
 const filteredAlerts = computed(() => {
   if (statusTab.value === 'all') return alerts.value
-  if (statusTab.value === 'pending') return alerts.value.filter(a => a.process_status === 'pending')
-  if (statusTab.value === 'processing') return alerts.value.filter(a => ['confirmed', 'dispatched', 'processing'].includes(a.process_status))
-  if (statusTab.value === 'resolved') return alerts.value.filter(a => a.process_status === 'resolved' || a.process_status === 'closed')
-  return alerts.value
+  return alerts.value.filter(a => a.status === statusTab.value)
 })
 
-function severityText(severity) {
-  const map = { critical: '严重', high: '高', medium: '中', low: '低' }
-  return map[severity] || '中'
-}
+// 详情弹窗只展示后端真实返回的字段
+const dialogLocation = computed(() => {
+  const a = currentAlert.value
+  if (!a) return '—'
+  return [a.building_name, a.location].filter(Boolean).join(' ') || '—'
+})
+
+const dialogAlertValue = computed(() => {
+  const a = currentAlert.value
+  if (!a || a.alert_value === null || a.alert_value === undefined) return '—'
+  return `${a.alert_value}${a.alert_unit || ''}`
+})
 
 function statusText(status) {
   const map = {
-    pending: '待确认',
-    confirmed: '已确认',
-    dispatched: '已派单',
+    pending: '待处置',
     processing: '处置中',
-    resolved: '已处理',
-    closed: '已归档',
-    ignored: '已忽略'
+    resolved: '已处置',
+    merged: '已合并'
   }
-  return map[status] || '待确认'
+  return map[status] || status || '—'
 }
 
 function statusTagType(status) {
   if (status === 'pending') return 'danger'
-  if (['confirmed', 'dispatched', 'processing'].includes(status)) return 'warning'
-  if (status === 'resolved' || status === 'closed') return 'success'
-  if (status === 'ignored') return 'info'
+  if (status === 'processing') return 'warning'
+  if (status === 'resolved') return 'success'
   return 'info'
 }
 
@@ -594,13 +558,6 @@ function severityType(severity) {
   if (severity === 'high') return 'warning'
   if (severity === 'medium') return 'info'
   return ''
-}
-
-function riskType(level) {
-  if (level === '严重风险') return 'danger'
-  if (level === '高风险') return 'warning'
-  if (level === '中风险') return 'info'
-  return 'success'
 }
 
 // 「类似告警」里展示的是本租户真实历史告警的处置状态（不再是随机编出来的结果）
@@ -627,95 +584,22 @@ async function loadAlerts() {
     if (filters.value.severity) params.severity = filters.value.severity
     if (filters.value.building_id) params.building_id = filters.value.building_id
     const res = await alertList(params)
-    const list = res.data.items || []
-    list.forEach((item, idx) => {
-      if (!item.process_status) {
-        const statuses = ['pending', 'pending', 'confirmed', 'dispatched', 'processing', 'resolved', 'resolved']
-        item.process_status = statuses[idx % statuses.length]
-      }
-    })
-    alerts.value = list
+    alerts.value = res.data.items || []
   } catch (e) {
-    const mock = generateMockAlerts()
-    alerts.value = mock
+    console.error('加载告警列表失败', e)
+    alerts.value = []
   } finally {
     loading.value = false
   }
 }
 
-function generateMockAlerts() {
-  const types = [
-    { name: '烟雾浓度超标', type: 'smoke_high', severity: 'critical' },
-    { name: '温度异常升高', type: 'temperature_high', severity: 'high' },
-    { name: '设备离线', type: 'device_offline', severity: 'high' },
-    { name: '水压过低', type: 'pressure_low', severity: 'medium' },
-    { name: '电池电量低', type: 'battery_low', severity: 'low' },
-    { name: '电流过载', type: 'current_high', severity: 'high' },
-  ]
-  const buildings = ['综合办公楼A座', '实验楼B座', '学生宿舍C区', '图书馆D馆']
-  const statuses = ['pending', 'pending', 'confirmed', 'dispatched', 'processing', 'resolved', 'resolved', 'closed']
-  const arr = []
-  for (let i = 1; i <= 25; i++) {
-    const t = types[i % types.length]
-    arr.push({
-      id: i,
-      alert_id: `AL${String(20260900 + i).padStart(10, '0')}`,
-      alert_name: t.name,
-      alert_type: t.type,
-      severity: t.severity,
-      device_id: `DEV-${String(i).padStart(6, '0')}`,
-      building_name: buildings[i % buildings.length],
-      risk_level: i % 4 === 0 ? '严重风险' : i % 3 === 0 ? '高风险' : i % 2 === 0 ? '中风险' : '低风险',
-      process_status: statuses[i % statuses.length],
-      created_at: `2026-09-0${(i % 9) + 1} ${String(8 + (i % 12)).padStart(2, '0')}:${String(i * 7 % 60).padStart(2, '0')}:${String(i * 13 % 60).padStart(2, '0')}`,
-      workorder: i % 3 === 0 ? {
-        id: `WO${String(1000 + i).padStart(6, '0')}`,
-        title: `${t.name}处置工单`,
-        status: i % 2 === 0 ? '处理中' : '已完成',
-        responsible_role: '维保工程师',
-        deadline: `2026-09-1${(i % 9) + 2}`,
-        auto_generated: i % 2 === 0,
-        recommended_action: '立即现场核查设备状态，确认告警真实性并采取相应处置措施'
-      } : null,
-      analysis: {
-        analysis_steps: [
-          { step: 1, name: '数据接收', description: '接收到设备告警数据' },
-          { step: 2, name: '阈值分析', description: '检测值超过预设告警阈值' },
-          { step: 3, name: '趋势研判', description: '分析近10分钟数据变化趋势' },
-          { step: 4, name: '关联分析', description: '关联周边设备状态综合判断' },
-          { step: 5, name: '风险评估', description: '评估当前告警风险等级' },
-          { step: 6, name: '处置建议', description: '生成处置建议并自动派单' },
-        ],
-        trend: { description: '数据呈持续上升趋势，需立即关注' },
-        most_likely_causes: [
-          '设备周边环境异常变化',
-          '设备灵敏度漂移导致误报',
-          '真实火情初期烟雾浓度升高',
-        ],
-        immediate_actions: [
-          '立即派人前往现场核查',
-          '查看视频监控确认现场情况',
-          '通知相关区域人员做好疏散准备',
-          '检查周边消防设施状态',
-        ]
-      },
-      risk_update: { success: true, new_score: '75分（高风险）' }
-    })
-  }
-  stats.value.total = arr.length
-  stats.value.by_severity = {
-    critical: arr.filter(a => a.severity === 'critical').length,
-    high: arr.filter(a => a.severity === 'high').length,
-    medium: arr.filter(a => a.severity === 'medium').length,
-    low: arr.filter(a => a.severity === 'low').length,
-  }
-  stats.value.auto_workorder_count = arr.filter(a => a.workorder?.auto_generated).length
-  stats.value.auto_workorder_rate = Math.round(stats.value.auto_workorder_count / arr.length * 100)
-  return arr
-}
-
 async function refreshData() {
   await Promise.all([loadStatistics(), loadAlerts()])
+  // 弹窗打开时保持展示的告警与刷新后的真实数据一致
+  if (detailDialog.value && currentAlert.value) {
+    const updated = alerts.value.find(a => a.id === currentAlert.value.id)
+    if (updated) currentAlert.value = updated
+  }
 }
 
 function resetFilters() {
@@ -740,12 +624,14 @@ async function handleAIAnalyze() {
   aiAnalyzeLoading.value = true
   try {
     const res = await analyzeAlert({
-      alert_id: currentAlert.value.id,
+      alert_id: currentAlert.value.alert_code,
       alert_type: currentAlert.value.alert_type,
-      alert_name: currentAlert.value.alert_name,
       severity: currentAlert.value.severity,
-      device_id: currentAlert.value.device_id,
-      building_name: currentAlert.value.building_name,
+      device_id: currentAlert.value.device_code || '',
+      building_name: currentAlert.value.building_name || '',
+      alert_value: currentAlert.value.alert_value,
+      alert_unit: currentAlert.value.alert_unit || '',
+      description: currentAlert.value.description || '',
     })
     // 接口外层是 { ok, data }：以前只取到信封，弹窗里全是 undefined
     aiAnalyzeResult.value = res.data?.data || null
@@ -762,11 +648,12 @@ async function handleGenerateRectification() {
   rectificationLoading.value = true
   try {
     const res = await generateRectificationPlan({
+      workorder_id: currentAlert.value.workorder_id ? String(currentAlert.value.workorder_id) : null,
       hazard_type: '消防设施',
       risk_level: currentAlert.value.severity,
-      description: currentAlert.value.alert_name,
-      building_name: currentAlert.value.building_name,
-      device_id: currentAlert.value.device_id,
+      description: currentAlert.value.alert_type_label || '',
+      building_name: currentAlert.value.building_name || '',
+      device_id: currentAlert.value.device_code || null,
     })
     // 同上：整改方案也是 { ok, data } 信封
     rectificationPlan.value = res.data?.data || null
@@ -778,135 +665,74 @@ async function handleGenerateRectification() {
   }
 }
 
-function confirmCreateWorkorder() {
-  ElMessage.success('整改工单已创建！')
-  showRectificationDialog.value = false
-  if (currentAlert.value) {
-    currentAlert.value.process_status = 'dispatched'
+// 开始处置：PUT /api/alerts/{id}/status -> processing
+async function startProcess(row) {
+  if (!row) return
+  try {
+    await updateAlertStatus(row.id, 'processing')
+    ElMessage.success('已开始处置')
+    await refreshData()
+  } catch (e) {
+    console.error('开始处置失败', e)
   }
 }
 
-const processSteps = computed(() => {
-  if (!currentAlert.value) return []
-  const status = currentAlert.value.process_status
-  const steps = [
-    { key: 'detect', name: '设备监测', done: true, time: currentAlert.value.created_at, operator: '系统自动' },
-    { key: 'alert', name: '触发告警', done: true, time: currentAlert.value.created_at, operator: '系统自动' },
-    { key: 'confirm', name: '告警确认', done: status !== 'pending', time: status !== 'pending' ? currentAlert.value.created_at : '', operator: status !== 'pending' ? '值班员' : '' },
-    { key: 'dispatch', name: '派发工单', done: ['dispatched', 'processing', 'processed', 'reviewed', 'archived'].includes(status), time: ['dispatched', 'processing'].includes(status) ? currentAlert.value.created_at : '', operator: ['dispatched', 'processing'].includes(status) ? '值班班长' : '' },
-    { key: 'process', name: '现场处置', done: ['processed', 'reviewed', 'archived'].includes(status), time: status === 'processed' ? currentAlert.value.created_at : '', operator: status === 'processed' ? '巡检员' : '' },
-    { key: 'review', name: '复查确认', done: ['reviewed', 'archived'].includes(status), time: status === 'reviewed' ? currentAlert.value.created_at : '', operator: status === 'reviewed' ? '安管员' : '' },
-    { key: 'archive', name: '归档结案', done: status === 'archived', time: status === 'archived' ? currentAlert.value.created_at : '', operator: status === 'archived' ? '系统' : '' },
-  ]
-  const currentIdx = steps.findIndex(s => !s.done)
-  if (currentIdx >= 0) {
-    steps[currentIdx].current = true
-  }
-  return steps
-})
-
-const processRecords = computed(() => {
-  if (!currentAlert.value) return []
-  const records = [
-    { title: '设备数据异常，触发告警', content: currentAlert.value.alert_name + '，设备编号：' + currentAlert.value.device_id, time: currentAlert.value.created_at, type: 'danger', operator: '系统' },
-  ]
-  if (currentAlert.value.process_status !== 'pending') {
-    records.push({ title: '值班员确认告警', content: '经视频复核，确认告警属实，通知相关人员到场', time: currentAlert.value.created_at, type: 'warning', operator: '张建国' })
-  }
-  if (['dispatched', 'processing', 'processed', 'reviewed', 'archived'].includes(currentAlert.value.process_status)) {
-    records.push({ title: '派发处置工单', content: '工单已派发至巡检组，要求30分钟内到场处置', time: currentAlert.value.created_at, type: 'primary', operator: '值班班长' })
-  }
-  if (['processed', 'reviewed', 'archived'].includes(currentAlert.value.process_status)) {
-    records.push({ title: '现场处置完成', content: '巡检员已到达现场，查明原因并完成处置，设备恢复正常', time: currentAlert.value.created_at, type: 'success', operator: '李明华' })
-  }
-  if (['reviewed', 'archived'].includes(currentAlert.value.process_status)) {
-    records.push({ title: '复查确认通过', content: '安管员现场复查，确认隐患已消除，符合安全要求', time: currentAlert.value.created_at, type: 'success', operator: '王安全' })
-  }
-  if (currentAlert.value.process_status === 'archived') {
-    records.push({ title: '告警已归档结案', content: '全流程闭环完成，记录归档保存', time: currentAlert.value.created_at, type: 'info', operator: '系统' })
-  }
-  return records.reverse()
-})
-
-function handleDispose() {
-  if (currentAlert.value) {
-    currentAlert.value.process_status = 'processed'
-    ElMessage.success('处置完成，等待复查')
-  }
-}
-
-function handleReview() {
-  if (currentAlert.value) {
-    currentAlert.value.process_status = 'reviewed'
-    ElMessage.success('复查通过')
-  }
-}
-
-function handleArchive() {
-  if (currentAlert.value) {
-    currentAlert.value.process_status = 'archived'
-    ElMessage.success('已归档结案')
-    detailDialog.value = false
-  }
-}
-
-function handleFalseAlarm() {
-  ElMessageBox.confirm('确认该告警为误报？', '提示', { type: 'warning' })
-    .then(() => {
-      if (currentAlert.value) {
-        currentAlert.value.process_status = 'archived'
-        ElMessage.success('已标记为误报并归档')
-        detailDialog.value = false
-      }
+// 现场处置：POST /api/alerts/{id}/handle -> resolved + 处置结论
+async function handleDispose(row) {
+  const target = row || currentAlert.value
+  if (!target) return
+  let value = ''
+  try {
+    const res = await ElMessageBox.prompt('请输入现场处置结果', '现场处置', {
+      confirmButtonText: '提交',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '例如：现场核查为探头积尘误报，已清洁复位并测试正常',
+      inputValidator: v => (v && v.trim() ? true : '请填写处置结果'),
     })
-    .catch(() => {})
+    value = res.value.trim()
+  } catch (e) {
+    return
+  }
+  try {
+    await handleAlert(target.id, { status: 'resolved', handle_result: value })
+    ElMessage.success('处置完成')
+    await refreshData()
+  } catch (e) {
+    console.error('现场处置失败', e)
+  }
 }
 
-function confirmAlert(row) {
-  row.process_status = 'confirmed'
-  ElMessage.success('告警已确认')
+// 工单与告警是单向关联（AlertRecord.workorder_id），用工单ID跳转工单页
+function goWorkorder(workorderId) {
+  if (!workorderId) return
+  router.push(`/workorders?order_id=${workorderId}`)
 }
 
-function dispatchAlert(row) {
-  ElMessageBox.prompt('请输入处理人员', '派单确认', {
-    confirmButtonText: '确认派单',
-    cancelButtonText: '取消',
-    inputValue: '张工',
-  }).then(() => {
-    row.process_status = 'dispatched'
-    ElMessage.success('已派单处理')
-  }).catch(() => {})
-}
-
-async function batchConfirm() {
+async function batchStartProcess() {
   if (!selectedAlerts.value.length) return
   try {
-    await ElMessageBox.confirm(`确认选中的 ${selectedAlerts.value.length} 条告警吗？`, '批量确认', {
+    await ElMessageBox.confirm(`将选中的 ${selectedAlerts.value.length} 条告警置为处置中？`, '批量开始处置', {
       type: 'warning',
     })
-    selectedAlerts.value.forEach(a => {
-      const found = alerts.value.find(x => x.id === a.id)
-      if (found) found.process_status = 'confirmed'
-    })
-    ElMessage.success('批量确认成功')
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('操作失败')
+    return
   }
-}
-
-async function batchDispatch() {
-  if (!selectedAlerts.value.length) return
-  try {
-    await ElMessageBox.confirm(`将选中的 ${selectedAlerts.value.length} 条告警派单处理？`, '批量派单', {
-      type: 'warning',
-    })
-    selectedAlerts.value.forEach(a => {
-      const found = alerts.value.find(x => x.id === a.id)
-      if (found) found.process_status = 'dispatched'
-    })
-    ElMessage.success('批量派单成功')
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error('操作失败')
+  let success = 0
+  const failed = []
+  for (const row of selectedAlerts.value) {
+    try {
+      await updateAlertStatus(row.id, 'processing')
+      success++
+    } catch (e) {
+      failed.push(row.alert_code || row.id)
+    }
+  }
+  await refreshData()
+  if (failed.length) {
+    ElMessage.warning(`成功 ${success} 条，失败 ${failed.length} 条：${failed.join('、')}`)
+  } else {
+    ElMessage.success(`已开始处置 ${success} 条告警`)
   }
 }
 
@@ -1108,7 +934,7 @@ onMounted(() => {
 .stat-icon.total { background: #eff6ff; }
 .stat-icon.critical { background: #fef2f2; }
 .stat-icon.high { background: #fffbeb; }
-.stat-icon.auto { background: #f0fdf4; }
+.stat-icon.pending { background: #fef2f2; }
 .stat-value {
   font-size: 28px;
   font-weight: 800;

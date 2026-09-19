@@ -141,3 +141,18 @@ def mark_all_notifications_read(tenant_id: int | None = None) -> Dict[str, Any]:
     ids = {i['id'] for i in data['items']}
     _save_read_ids(ids)
     return {'message': 'all read', 'read_count': len(ids)}
+
+
+def mark_notification_read(notification_id: str) -> Dict[str, Any]:
+    """把单条通知标记为已读。
+
+    通知本身是按业务数据实时拼出来的（没有独立表），已读状态统一存在
+    data/notification_read.json 里，因此这里只追加一个 id。
+    """
+    nid = str(notification_id or '').strip()
+    if not nid:
+        return {'message': 'invalid id', 'updated': False}
+    ids = _read_ids()
+    ids.add(nid)
+    _save_read_ids(ids)
+    return {'message': 'read', 'id': nid, 'read_count': len(ids)}

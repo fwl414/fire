@@ -25,7 +25,9 @@ class _InspectionPageState extends State<InspectionPage> {
   final TextEditingController _descCtrl = TextEditingController();
 
   late Future<Map<String, dynamic>> _devicesFuture;
+  late Future<List<Map<String, dynamic>>> _buildingsFuture;
   int? _deviceId;
+  int? _buildingId;
   File? _image;
   bool _submitting = false;
   Map<String, dynamic>? _result;
@@ -34,6 +36,7 @@ class _InspectionPageState extends State<InspectionPage> {
   void initState() {
     super.initState();
     _devicesFuture = api.devices(pageSize: 50);
+    _buildingsFuture = api.buildings();
   }
 
   @override
@@ -44,6 +47,12 @@ class _InspectionPageState extends State<InspectionPage> {
   }
 
   void _reloadDevices() => setState(() => _devicesFuture = api.devices(pageSize: 50));
+
+  void _reloadBuildings() => setState(() => _buildingsFuture = api.buildings());
+
+  void _onBuildingChanged(int? value) {
+    setState(() => _buildingId = value);
+  }
 
   void _onDeviceChanged(int? value, List<Map<String, dynamic>> devices) {
     setState(() {
@@ -96,8 +105,8 @@ class _InspectionPageState extends State<InspectionPage> {
 
   Future<void> _submit() async {
     final location = _locationCtrl.text.trim();
-    if (location.isEmpty && _deviceId == null) {
-      _toast('请选择设备或填写现场位置');
+    if (location.isEmpty && _deviceId == null && _buildingId == null) {
+      _toast('请选择所属建筑或设备，或填写现场位置');
       return;
     }
 
@@ -116,6 +125,7 @@ class _InspectionPageState extends State<InspectionPage> {
           position == null ? base : (base.isEmpty ? '【定位】$position' : '$base\n【定位】$position');
 
       final data = await api.submitReport(
+        buildingId: _buildingId,
         deviceId: _deviceId,
         location: location,
         description: description,
@@ -145,6 +155,8 @@ class _InspectionPageState extends State<InspectionPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _buildBuildingField(),
+              const SizedBox(height: 12),
               _buildDeviceField(),
               const SizedBox(height: 12),
               TextField(
@@ -208,6 +220,43 @@ class _InspectionPageState extends State<InspectionPage> {
         ),
         if (_result != null) _buildResult(_result!),
       ],
+    );
+  }
+
+  /// 所属建筑：`GET /api/buildings` 返回裸数组，字段是 `building_code / building_name`。
+  /// 后端 `POST /api/mobile/report` 接 `building_id` Form 字段，选了就随请求一起提交，
+  /// 未填位置时后端会用建筑名补全 `location`。
+  Widget _buildBuildingField() {
+    return AsyncView<List<Map<String, dynamic>>>(
+      future: _buildingsFuture,
+      onRetry: _reloadBuildings,
+      loadingMessage: '正在加载建筑…',
+      isEmpty: (data) => data.isEmpty,
+      emptyMessage: '暂无建筑数据，可直接填写位置',
+      emptyIcon: Icons.apartment_outlined,
+      builder: (context, buildings) {
+        // 列表刷新后原选中项可能消失，不能让下拉框拿到不存在的值
+        final selected = buildings.any((building) => intOf(building['id']) == _buildingId)
+            ? _buildingId
+            : null;
+        return DropdownButtonFormField<int>(
+          initialValue: selected,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: '所属建筑（可选）',
+            border: OutlineInputBorder(),
+          ),
+          items: buildings.map((building) {
+            final code = textOf(building['building_code']);
+            final name = textOf(building['building_name'], fallback: '未命名建筑');
+            return DropdownMenuItem<int>(
+              value: intOf(building['id']),
+              child: Text('$code $name', overflow: TextOverflow.ellipsis),
+            );
+          }).toList(),
+          onChanged: _submitting ? null : _onBuildingChanged,
+        );
+      },
     );
   }
 
@@ -315,6 +364,12 @@ class _InspectionPageState extends State<InspectionPage> {
             Text(summary, style: _bodyStyle),
           ],
           if (recordId != 0) ...[
+            const SizedBox(height: 12),
+            const Text('现场照片', style: _labelStyle),
+            const SizedBox(height: 6),
+            // 图片接口需要鉴权且没有静态目录，记录无图/文件缺失时后端返回 404，
+            // EvidenceImage 会兜底成「暂无图片证据」占位，点击可放大。
+            EvidenceImage(request: api.recordImageRequest(recordId)),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,

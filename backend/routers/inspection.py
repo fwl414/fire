@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile, File
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 from database import InspectionRecord, get_db
@@ -24,6 +26,7 @@ from services.record_persistence_service import (
     save_inspection_record,
 )
 from services.workorder_service import build_inspection_report
+from services.upload_archive_service import UPLOAD_ROOT
 
 from services.auth_service import get_current_tenant_id, get_current_user
 from services.runtime_state import INSPECTION_TASK_CACHE
@@ -195,6 +198,86 @@ def get_record(
         "model_name": r.model_name,
         "created_at": r.created_at.isoformat() if r.created_at else "",
     }
+
+
+def _image_roots() -> List[Path]:
+    """允许读取图片的根目录。
+
+    巡检图片由 agent_service.save_upload 写到进程 CWD 下的 uploads/，
+    而容器里 UPLOAD_STORAGE_DIR 指向独立数据卷，两个位置并不总是一致，所以都接受。
+    """
+    roots: List[Path] = []
+    for root in (Path.cwd() / "uploads", UPLOAD_ROOT):
+        try:
+            resolved = root.resolve()
+        except OSError:
+            continue
+        if resolved not in roots:
+            roots.append(resolved)
+    return roots
+
+
+def _resolve_evidence_image(raw: str) -> Optional[Path]:
+    """把库里记录的图片路径还原成磁盘文件，并确保没有跑出允许的根目录。"""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    rel = text.replace("\\", "/").lstrip("/")
+    if ".." in rel.split("/"):
+        return None
+
+    roots = _image_roots()
+    stored = Path(rel)
+    candidates: List[Path] = [stored] if stored.is_absolute() else []
+    for root in roots:
+        candidates.append(root / rel)
+        # 库里存的可能是 uploads/xxx 这类带前缀的相对路径，去掉前缀再试一次
+        if rel.startswith("uploads/"):
+            candidates.append(root / rel[len("uploads/"):])
+
+    for candidate in candidates:
+        try:
+            path = candidate.resolve()
+        except OSError:
+            continue
+        if path.is_file() and any(path == root or root in path.parents for root in roots):
+            return path
+    return None
+
+
+@router.get("/api/records/{record_id}/image")
+def get_record_image(
+    record_id: str,
+    index: int = 0,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant_id),
+):
+    """下载巡检记录关联的现场图片（移动端展示图片证据用）。
+
+    先查主库的巡检记录（单张 image_path），查不到再退到运行库的巡检档案
+    （image_paths 列表，用 index 选择第几张）。两端都按租户过滤。
+    """
+    raw = ""
+    if record_id.isdigit():
+        r = db.query(InspectionRecord).filter(
+            InspectionRecord.id == int(record_id),
+            InspectionRecord.tenant_id == tenant_id,
+        ).first()
+        if r:
+            raw = r.image_path or ""
+
+    if not raw:
+        record = get_inspection_record(record_id, tenant_id=tenant_id) or {}
+        images = record.get("image_paths") or []
+        if index < 0 or index >= len(images):
+            return JSONResponse(status_code=404, content={"message": "记录不存在或没有图片"})
+        raw = images[index]
+
+    path = _resolve_evidence_image(raw)
+    if not path:
+        return JSONResponse(status_code=404, content={"message": "图片文件不存在"})
+    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return FileResponse(path, media_type=media_type, filename=path.name)
 
 
 @router.get("/api/inspection/demo-cases")

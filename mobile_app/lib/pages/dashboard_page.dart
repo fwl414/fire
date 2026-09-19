@@ -63,6 +63,7 @@ class _DashboardPageState extends State<DashboardPage> {
           children: [
             _buildOverview(data.home),
             _buildQuickActions(context),
+            _buildArchiveActions(context),
             _buildTodo(data.home, data.tasks),
           ],
         ),
@@ -183,35 +184,60 @@ class _DashboardPageState extends State<DashboardPage> {
     return SectionCard(
       title: '常用功能',
       child: Row(
-        children: actions
-            .map((action) => Expanded(
-                  child: InkWell(
-                    onTap: action.onTap,
-                    borderRadius: BorderRadius.circular(10),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF2F2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(action.icon, color: const Color(0xFFDC2626), size: 22),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            action.label,
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ))
-            .toList(),
+        children: actions.map(_buildActionTile).toList(),
+      ),
+    );
+  }
+
+  /// 巡检档案 / 批量巡检：单独的卡片，避免把「常用功能」那行挤成 6 列
+  Widget _buildArchiveActions(BuildContext context) {
+    final actions = <_QuickAction>[
+      _QuickAction(
+        icon: Icons.inventory_2_outlined,
+        label: '巡检档案',
+        onTap: () => Navigator.of(context).pushNamed('/archives'),
+      ),
+      _QuickAction(
+        icon: Icons.batch_prediction_outlined,
+        label: '批量巡检',
+        onTap: () => Navigator.of(context).pushNamed('/batch-inspections'),
+      ),
+    ];
+
+    return SectionCard(
+      title: '巡检闭环',
+      child: Row(
+        children: actions.map(_buildActionTile).toList(),
+      ),
+    );
+  }
+
+  Widget _buildActionTile(_QuickAction action) {
+    return Expanded(
+      child: InkWell(
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(action.icon, color: const Color(0xFFDC2626), size: 22),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                action.label,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

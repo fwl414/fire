@@ -77,7 +77,9 @@ class _WorkorderDetailPageState extends State<WorkorderDetailPage> {
               _buildHeader(data),
               _buildInfo(data),
               _buildDescription(data),
+              _buildSourceRecord(context, data),
               _buildSourceAlert(context, data),
+              _buildProcessResult(data),
               _buildActions(data),
             ],
           ),
@@ -118,22 +120,103 @@ class _WorkorderDetailPageState extends State<WorkorderDetailPage> {
 
   Widget _buildInfo(Map<String, dynamic> data) {
     final assignee = textOf(data['assignee_name']);
+    final deviceId = intOf(data['device_id']);
+    final ticketType = textOf(data['ticket_type']);
+    final source = textOf(data['source']);
 
     return SectionCard(
       title: '工单信息',
       child: Column(
         children: [
           InfoRow(label: '优先级', value: textOf(data['priority'])),
+          if (ticketType.isNotEmpty) InfoRow(label: '工单类型', value: ticketType),
           InfoRow(label: '位置', value: textOf(data['location'])),
           InfoRow(label: '楼栋', value: textOf(data['building_name'])),
+          if (deviceId != 0) InfoRow(label: '关联设备', value: '设备 #$deviceId'),
           InfoRow(label: '负责人', value: assignee.isEmpty ? '未指派' : assignee),
           InfoRow(label: '上报人', value: textOf(data['reporter_name'])),
+          if (source.isNotEmpty) InfoRow(label: '来源', value: source),
           InfoRow(
-            label: '截止时间',
+            label: '整改时限',
             value: formatFullTime(data['deadline'], fallback: '未设置'),
           ),
           InfoRow(label: '创建时间', value: formatFullTime(data['created_at'])),
           InfoRow(label: '更新时间', value: formatFullTime(data['updated_at'])),
+          InfoRow(label: '备注', value: textOf(data['remark'])),
+        ],
+      ),
+    );
+  }
+
+  /// 来源巡检记录：后端 `record_id` 是主库巡检记录 id，可直接跳记录详情
+  Widget _buildSourceRecord(BuildContext context, Map<String, dynamic> data) {
+    final recordId = intOf(data['record_id']);
+    if (recordId == 0) return const SizedBox.shrink();
+
+    return SectionCard(
+      title: '来源巡检记录',
+      child: InkWell(
+        onTap: () => Navigator.of(context)
+            .pushNamed('/record-detail', arguments: recordId),
+        child: Row(
+          children: [
+            const Icon(Icons.fact_check_outlined, size: 18, color: Color(0xFF2563EB)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '巡检记录 #$recordId',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: Color(0xFFCBD5E1)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 处理结果与复查信息：待受理阶段这些字段都是空的，此时不展示整块
+  Widget _buildProcessResult(Map<String, dynamic> data) {
+    final handleResult = textOf(data['handle_result']);
+    final reviewResult = textOf(data['review_result']);
+    final reviewNote = textOf(data['review_note']);
+    final reviewedAt = textOf(data['reviewed_at']);
+    if (handleResult.isEmpty &&
+        reviewResult.isEmpty &&
+        reviewNote.isEmpty &&
+        reviewedAt.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return SectionCard(
+      title: '处理与复查',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (handleResult.isNotEmpty) ...[
+            const Text('处理结果', style: _labelStyle),
+            const SizedBox(height: 4),
+            Text(handleResult, style: _bodyStyle),
+          ],
+          if (reviewResult.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            InfoRow(label: '复查结论', value: reviewResult),
+          ],
+          if (reviewedAt.isNotEmpty)
+            InfoRow(
+              label: '复查时间',
+              value: formatFullTime(reviewedAt, fallback: '未复查'),
+            ),
+          if (reviewNote.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            const Text('复查意见', style: _labelStyle),
+            const SizedBox(height: 4),
+            Text(reviewNote, style: _bodyStyle),
+          ],
         ],
       ),
     );
@@ -297,3 +380,15 @@ class _WorkorderDetailPageState extends State<WorkorderDetailPage> {
         : OutlinedButton(onPressed: onPressed, child: Text(label));
   }
 }
+
+const TextStyle _labelStyle = TextStyle(
+  fontSize: 12.5,
+  fontWeight: FontWeight.w600,
+  color: Color(0xFF64748B),
+);
+
+const TextStyle _bodyStyle = TextStyle(
+  fontSize: 13,
+  height: 1.6,
+  color: Color(0xFF334155),
+);
