@@ -1828,3 +1828,37 @@ WebSocket 升级正常（101 Switching Protocols）
 状态 success）已删除，`background_tasks` 复核为 **0 行**；`fault_tickets` **0 行**、
 主库 `inspection_records` **5 行**、运行库 `inspection_records` **22 行** / `work_orders` **344 行**，均与走查前一致。
 
+---
+
+### 13.14 Web 侧边栏改为「隐藏式」（2026-09-19 追加）
+
+**背景**：侧边栏此前固定占 238px 且不可收起，窄窗口下内容区被压得很紧
+（13.12 里告警中心那一处横向溢出，本质就是「内容区不够宽」的连带后果）。
+改为**默认收起、点顶栏按钮才展开**，把宽度让给内容。
+
+**实现**（`frontend/src/App.vue`）：
+
+- 顶栏左侧新增一个开关按钮（`Fold` / `Expand` 图标随状态切换，带 `title` 与 `aria-expanded`）。
+- `el-aside` 的宽度改为 `:width="sidebarOpen ? '238px' : '0px'"`，并用 `width` 过渡做动画；
+  `overflow:hidden` 裁掉内容，内层 `.aside > *` 固定 238px —— 否则收起过程中菜单文字会被反复挤压换行，
+  动画会「跳」。这里**不用 `v-if`**，避免展开/收起把菜单展开态销毁。
+- 状态记在 `localStorage['fire.sidebar.open']`，刷新后保持；首次访问即收起。
+- 数据大屏（`/dashboard`）本来就不渲染侧边栏与顶栏，不受影响。
+
+**实测**（浏览器内量 `offsetWidth` / `getBoundingClientRect()`，窗口 **1185px**，告警中心页 9 列表格）：
+
+| 状态 | 侧边栏 | `.main` 宽度 | 表格内容宽 / 可视宽 | 是否横向滚动 |
+| --- | --- | --- | --- | --- |
+| 收起（默认） | **0px** | **1170px** | 1084 / 1084 | **否** |
+| 展开 | 238px | 932px | 1060 / 846 | 是（1060 > 846） |
+
+即：同一窗口下收起侧边栏后，13.12 修过的那张 9 列表格**连横向滚动都不需要**了
+（展开时仍需要）。按 13.12 的结论折算，全列显示所需窗口宽度从展开态的 ≈1399px 降到收起态的 **≈1161px**。
+
+**交互验证**：点开关 → 展开（`--el-aside-width: 238px`）；再点 → 收起（`0px`）；
+刷新页面状态保持（`localStorage` 复核 `"0"` / `"1"` 与 DOM 一致）。
+
+**回归**：`node node_modules/@playwright/test/cli.js test data-screen.spec.js pages.spec.js` → **10 passed**
+（其中 `data-screen.spec.js` 里「数据大屏不渲染 `.aside`」的断言仍然成立；
+`pages.spec.js` 的核心页面冒烟覆盖登录后逐页打开）。
+

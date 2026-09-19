@@ -5,7 +5,7 @@
   </div>
   <router-view v-if="isPublicPage" />
   <el-container v-else class="layout" :class="{ 'data-screen-layout': isDataScreen }">
-    <el-aside v-if="!isDataScreen" width="238px" class="aside">
+    <el-aside v-if="!isDataScreen" :width="sidebarOpen ? '238px' : '0px'" class="aside">
       <div class="brand">智慧消防管理系统</div>
       <div class="user-panel" @click="goProfile" style="cursor: pointer">
         <div class="avatar">{{ userInitial }}</div>
@@ -27,9 +27,24 @@
 
     <el-container>
       <el-header v-if="!isDataScreen" class="topbar">
-        <div>
-          <strong>{{ pageTitle }}</strong>
-          <span class="top-subtitle">{{ roleHint }}</span>
+        <div class="topbar-left">
+          <el-button
+            class="sidebar-toggle"
+            text
+            :title="sidebarOpen ? '收起侧边栏' : '展开侧边栏'"
+            :aria-expanded="sidebarOpen"
+            aria-label="收起或展开侧边栏"
+            @click="toggleSidebar"
+          >
+            <el-icon :size="18">
+              <Fold v-if="sidebarOpen" />
+              <Expand v-else />
+            </el-icon>
+          </el-button>
+          <div>
+            <strong>{{ pageTitle }}</strong>
+            <span class="top-subtitle">{{ roleHint }}</span>
+          </div>
         </div>
         <div class="top-actions">
           <el-button text @click="openNotifications">
@@ -78,6 +93,7 @@ import { getCurrentUser, clearCurrentUser, hasPermission } from './auth'
 import { globalLoading } from './api/core'
 import { wsService } from './utils/websocket'
 import SmartAssistant from './components/SmartAssistant.vue'
+import { Expand, Fold } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -85,6 +101,15 @@ const currentUser = ref(getCurrentUser())
 const notifyDrawer = ref(false)
 const notifications = ref([])
 const notificationSummary = ref({})
+
+// 侧边栏默认收起（隐藏式：点顶栏按钮才展开），用户手动选过的状态记在本地，刷新后保持。
+const SIDEBAR_KEY = 'fire.sidebar.open'
+const sidebarOpen = ref(localStorage.getItem(SIDEBAR_KEY) === '1')
+
+function toggleSidebar() {
+  sidebarOpen.value = !sidebarOpen.value
+  localStorage.setItem(SIDEBAR_KEY, sidebarOpen.value ? '1' : '0')
+}
 
 const isPublicPage = computed(() => route.meta?.public)
 const isDataScreen = computed(() => route.path === '/dashboard')
@@ -392,7 +417,9 @@ body { margin:0; background:var(--fire-bg); font-family: Arial, 'Microsoft YaHei
 .data-screen-layout { height:100vh; min-height:100vh; background:#050d1a; }
 .data-screen-layout > .el-container { min-width:0; height:100%; }
 .data-screen-main { padding:0 !important; height:100vh; min-height:0; overflow:hidden; }
-.aside { background:#0f172a; color:#fff; box-shadow:2px 0 16px rgba(15,23,42,.08); }
+.aside { background:#0f172a; color:#fff; box-shadow:2px 0 16px rgba(15,23,42,.08); overflow:hidden; transition:width .22s cubic-bezier(.4,0,.2,1); }
+/* 收起过程中 el-aside 会不断变窄，内层保持原始宽度，避免菜单文字被反复挤压换行（收起动画更平滑） */
+.aside > * { width:238px; }
 .brand { height:64px; line-height:64px; text-align:center; font-weight:800; font-size:18px; border-bottom:1px solid #1e293b; letter-spacing:.2px; }
 .user-panel { display:flex; gap:10px; align-items:center; padding:14px 16px; border-bottom:1px solid #1e293b; }
 .avatar { width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#2563eb,#60a5fa); color:white; font-weight:800; }
@@ -402,6 +429,11 @@ body { margin:0; background:var(--fire-bg); font-family: Arial, 'Microsoft YaHei
 .topbar strong { font-size:18px; }
 .top-subtitle { color:var(--fire-muted); font-size:13px; margin-left:12px; }
 .top-actions { display:flex; gap:12px; align-items:center; }
+
+/* 顶栏左侧：侧边栏开关 + 页面标题 */
+.topbar-left { display:flex; align-items:center; gap:10px; min-width:0; }
+.sidebar-toggle { padding:6px 8px; border-radius:10px; color:#64748b; }
+.sidebar-toggle:hover { color:#2563eb; background:#eff6ff; }
 
 /* 退出登录按钮样式优化 */
 .top-actions .el-button {
