@@ -1412,11 +1412,74 @@ Linux `/proc/stat` 的 USER_HZ 是 10ms 粒度（Windows 约 15.6ms），所以�
 修复（`tests/test_system_metrics.py`）：两次采样之间等计数器真正推进（最多 20×20ms），
 断言内容一条没改，**服务端行为不动**。改后连跑两遍全量均 `612 passed, 26 subtests passed`。
 
+#### PR run #3：8 个作业全貌
+
+push 只覆盖 4 个作业，所以另开 PR（`fix/flaky-cpu-sample-test` → `main`）走 `pull_request` 事件，
+才把**从没跑过**的「移动端 APK 构建」与「前端 E2E」拉起来。8 个作业全部创建：
+
+| 作业 | 结果 | 耗时 |
+| --- | --- | --- |
+| 移动端 analyze + test | success | 41s |
+| 前端构建 | success | 1m9s |
+| 生产镜像构建 | success | 52s |
+| 移动端 APK 构建 | **success**（首次实跑，一次过） | 4m32s |
+| 后端测试（pytest 全量） | **failure** | 33s（失败步骤本身 0s） |
+| 前端 E2E | **failure** | 9m33s |
+| 发布到部署主机 | skipped | — |
+| 回滚部署主机 | skipped | — |
+
+#### 失败一：后端测试 —— `pytest` 根本没装
+
+```
+Run python -m pytest tests/ -q
+/opt/hostedtoolcache/Python/3.14.7/x64/bin/python: No module named pytest
+Error: Process completed with exit code 1.
+```
+
+`backend/requirements.txt` 是**生产依赖**，不含 pytest；CI 装的正是它，所以命令 0 秒就退出
+（失败步骤耗时 0s —— 根本没跑到用例）。本地能跑只是因为全局解释器装了 pytest 9.1.1，
+与用例、与此前那个 flaky 测试都无关。
+
+修复：新增 `backend/requirements-dev.txt`（`-r requirements.txt` + `pytest>=9.0`），
+CI 的后端作业改成装它（pip 缓存键一并加上该文件）。生产镜像仍只装 `requirements.txt`。
+
+#### 失败二：前端 E2E —— 4 failed / 3 flaky / 34 passed
+
+| 失败用例 | 报错 |
+| --- | --- |
+| `realtime-push.spec.js:44` 令牌无效以 4401 关闭 | `Expected: 4401, Received: 1006` |
+| `realtime-push.spec.js:53` 带令牌按令牌身份回话 | `应认证成功：{"ok":false,"code":1006}` |
+| `realtime-push.spec.js:64` 推送后大屏立即刷新 | `Timeout 10000ms`，推送没到 |
+| `data-screen.spec.js:230` 3D 场景建筑点击下钻 | `page.waitForURL` 超时（撞上 90s 用例超时） |
+
+3 个 flaky（重试通过，不计失败）：`audit-log.spec.js:15`、`data-screen.spec.js:178`、
+`system-monitor.spec.js:10`（磁盘值与页面值比对 —— 与刚修的 CPU 那个同类）。
+
+**WebSocket 的 3 个失败是同一根因，而且本地必过**：本机用与 CI 相同的 Node 20 + Playwright 1.63
+跑 `e2e/realtime-push.spec.js` 是 `3 passed`。CI 拿到的是 **1006（异常关闭，没拿到关闭帧）**，
+即连接在到达后端前就断了 —— 而 HTTP 走同一个 Vite 代理是正常的（同批次的登录、大屏数据请求全 200）。
+本轮先给用例装上诊断：失败时同时探一次「经 Vite 代理」与「直连后端 8010」，并把
+`wasClean` / `readyState` / `onerror` 写进断言消息，下一轮 CI 就能直接判定断在代理还是后端。
+
+**3D 下钻不是环境问题，是用例自己太慢**：原实现先扫完整张画布（9×7＝63 次 move + 读 cursor）
+再回头点第一个命中点。CI 上这一扫要几十秒，把 90s 用例预算耗光；而且场景每帧都在渲染，
+早先记下的坐标会漂移，回头点很可能已经落空。已改成「找到就立刻点」（命中即点，并在每轮重新量一次
+`boundingBox`），整体给 45s 预算。本地回归 `4 passed (24.7s)`，其中 3D 用例 **14.5s**。
+
+#### 查 Actions 日志的办法
+
+`/actions/jobs/{id}/logs` 匿名访问返回 `Must have admin rights`，`workflow_dispatch` 也要 token。
+可行路径：**在内置浏览器里登录 GitHub 后看 Web UI 的作业页面** ——
+每个步骤是 `<details class="CheckStep">`，失败步骤默认展开，日志正文就在 DOM 里
+（长日志分段渲染，需要边滚边取）。本次两个失败的根因都是这么读出来的。
+
 #### 本轮遗留
 
-- 查看 Actions 日志需要认证：`/actions/jobs/{id}/logs` 匿名访问返回 **403**，`workflow_dispatch`
-  同样需要 token。所以「CI 那次失败就是这个用例」是强推断（本地同一用例复现 + 机制在 Linux 更显著），
-  没有直接读到日志 —— 推 PR 重跑一次即可闭环验证。
 - 仓库当前为 **public**，代码与 `docs/`（含审计报告、测试报告、截图）均已公开；如需转私有：
   Settings → 最下方 Danger Zone → Change repository visibility。
+- E2E 的 3 个 flaky 用例尚未加固（重试可过，不阻塞流水线）。
+- WebSocket 在 CI 的根因待下一轮 CI 的诊断输出确认（本地无法复现）。
+- 本机 `git push` 需走代理：DNS 把 `github.com` 解析成 Clash Verge 的 fake-ip（`198.18.0.57`），
+  而系统代理是关的（`ProxyEnable=0`），直连必然 TLS 握手失败。推送前先
+  `$env:HTTPS_PROXY="http://127.0.0.1:7897"`，或在 Clash Verge 里重新打开「系统代理」。
 
