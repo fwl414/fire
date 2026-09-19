@@ -101,7 +101,7 @@
 
       <el-table :data="filteredAlerts" v-loading="loading" stripe style="width: 100%" @selection-change="onSelectionChange">
         <el-table-column type="selection" width="50" />
-        <el-table-column prop="alert_id" label="告警编号" width="160" />
+        <el-table-column prop="alert_id" label="告警编号" width="130" />
         <el-table-column label="告警级别" width="90">
           <template #default="{ row }">
             <div class="severity-badge" :class="row.severity">
@@ -109,14 +109,14 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="alert_name" label="告警类型" width="140">
+        <el-table-column prop="alert_name" label="告警类型" width="120">
           <template #default="{ row }">
             <el-tag :type="severityType(row.severity)" size="small" effect="light">{{ row.alert_name }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="device_id" label="设备" width="140" />
-        <el-table-column prop="building_name" label="位置" min-width="160" />
-        <el-table-column label="处置状态" width="100">
+        <el-table-column prop="device_id" label="设备" width="120" />
+        <el-table-column prop="building_name" label="位置" min-width="130" />
+        <el-table-column label="处置状态" width="90">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.process_status)" size="small" effect="dark">
               {{ statusText(row.process_status) }}
@@ -124,7 +124,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="告警时间" width="160" />
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="viewDetail(row)">详情</el-button>
             <el-button v-if="row.process_status === 'pending'" link type="success" @click="confirmAlert(row)">确认</el-button>
