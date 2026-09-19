@@ -1,0 +1,37 @@
+# Alertmanager 配置（模板：__ALERT_WEBHOOK_URL__ 由容器启动脚本替换为真实地址）
+route:
+  receiver: 'default-webhook'
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: 'default-webhook'
+      group_wait: 10s
+      repeat_interval: 1h
+    - matchers:
+        - severity = warning
+      receiver: 'default-webhook'
+      repeat_interval: 12h
+
+inhibit_rules:
+  # 后端整体不可用时，抑制其派生的其他告警，避免告警风暴
+  - source_matchers:
+      - alertname = FireAiBackendDown
+    target_matchers:
+      - service =~ "backend|alert-loop|device-ingest"
+    equal: ['service']
+
+  # 数据库不可用时，抑制备份与错误率告警
+  - source_matchers:
+      - alertname = FireAiDatabaseNotReady
+    target_matchers:
+      - alertname =~ "FireAiHighErrorRate|FireAiBackupStale|FireAiNoBackup"
+
+receivers:
+  - name: 'default-webhook'
+    webhook_configs:
+      - url: '__ALERT_WEBHOOK_URL__'
+        send_resolved: true

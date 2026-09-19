@@ -1,0 +1,89 @@
+[
+  {
+    "id": "video_electrical_fire_001",
+    "title": "电气火灾安全知识视频资源",
+    "topic": "电气火灾",
+    "provider": "外部视频平台",
+    "url": "https://www.bilibili.com/",
+    "embed_url": "",
+    "allow_embed": false,
+    "thumbnail": "/fire_media/images/electrical_fire.svg",
+    "keywords": [
+      "电气火灾",
+      "插座过载",
+      "配电箱",
+      "不能用水",
+      "切断电源"
+    ],
+    "description": "用于学习电气火灾处置原则。当前为外部视频入口示例，可替换为你选定的视频链接。"
+  },
+  {
+    "id": "video_extinguisher_001",
+    "title": "灭火器使用方法演示视频资源",
+    "topic": "灭火器",
+    "provider": "外部视频平台",
+    "url": "https://www.bilibili.com/",
+    "embed_url": "",
+    "allow_embed": false,
+    "thumbnail": "/fire_media/images/extinguisher.svg",
+    "keywords": [
+      "灭火器",
+      "使用方法",
+      "干粉灭火器",
+      "初期火灾"
+    ],
+    "description": "用于学习灭火器使用步骤。当前为外部视频入口示例，可替换为真实公开视频链接。"
+  },
+  {
+    "id": "video_evacuation_001",
+    "title": "消防通道与疏散逃生视频资源",
+    "topic": "疏散安全",
+    "provider": "外部视频平台",
+    "url": "https://www.bilibili.com/",
+    "embed_url": "",
+    "allow_embed": false,
+    "thumbnail": "/fire_media/images/evacuation.svg",
+    "keywords": [
+      "消防通道",
+      "疏散",
+      "安全出口",
+      "堵塞"
+    ],
+    "description": "用于学习消防通道和疏散逃生相关知识。"
+  },
+  {
+    "id": "video_ev_001",
+    "title": "电动车违规充电风险视频资源",
+    "topic": "电动车安全",
+    "provider": "外部视频平台",
+    "url": "https://www.bilibili.com/",
+    "embed_url": "",
+    "allow_embed": false,
+    "thumbnail": "/fire_media/images/ev_battery.svg",
+    "keywords": [
+      "电动车",
+      "飞线充电",
+      "热失控",
+      "楼道"
+    ],
+    "description": "用于学习电动车入楼充电和飞线充电风险。"
+  },
+  {
+    "id": "video_initial_fire_001",
+    "title": "初期火灾应急处置视频资源",
+    "topic": "初期火情",
+    "provider": "外部视频平台",
+    "url": "https://www.bilibili.com/",
+    "embed_url": "",
+    "allow_embed": false,
+    "thumbnail": "/fire_media/images/smoke_alarm.svg",
+    "keywords": [
+      "烟雾",
+      "明火",
+      "报警",
+      "疏散",
+      "初期火灾"
+    ],
+    "description": "用于学习发现烟雾、明火时的应急处置流程。"
+  }
+]

@@ -1,0 +1,80 @@
+# 监控与告警叠加编排（与主编排同项目、同网络）
+#
+# 启动（与主编排一起）：
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.monitoring.yml up -d
+#
+# 访问（默认仅监听本机回环，避免监控面暴露到公网）：
+#   Prometheus   http://127.0.0.1:9090
+#   Alertmanager http://127.0.0.1:9093
+#   Grafana      http://127.0.0.1:3000（账号 admin / GRAFANA_ADMIN_PASSWORD）
+#
+# 需要调整对外绑定地址时设置 MONITORING_BIND（例如 0.0.0.0，务必配合防火墙）。
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ${CONTAINER_PREFIX:-fire_ai}_prometheus
+    environment:
+      - METRICS_TOKEN=${METRICS_TOKEN:?METRICS_TOKEN must be set}
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
+      - ./deploy/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed "s|__METRICS_TOKEN__|$${METRICS_TOKEN}|g" /etc/prometheus/prometheus.yml.tmpl > /etc/prometheus/prometheus.yml
+        exec /bin/prometheus \
+          --config.file=/etc/prometheus/prometheus.yml \
+          --storage.tsdb.retention.time=30d \
+          --storage.tsdb.path=/prometheus
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9090:9090"
+    depends_on:
+      - backend
+      - alertmanager
+    restart: unless-stopped
+    networks:
+      - fire_ai_network
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: ${CONTAINER_PREFIX:-fire_ai}_alertmanager
+    environment:
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-http://127.0.0.1:9095/webhook}
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      - alertmanager_data:/alertmanager
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed "s|__ALERT_WEBHOOK_URL__|$${ALERT_WEBHOOK_URL}|g" /etc/alertmanager/alertmanager.yml.tmpl > /etc/alertmanager/alertmanager.yml
+        exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9093:9093"
+    restart: unless-stopped
+    networks:
+      - fire_ai_network
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: ${CONTAINER_PREFIX:-fire_ai}_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - fire_ai_network
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

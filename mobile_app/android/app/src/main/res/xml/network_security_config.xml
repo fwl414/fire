@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  智慧消防巡检 App 的网络安全策略。
+
+  现场部署常见形态是「内网服务器 + HTTP」，而 Android 9（API 28）起默认禁止明文流量，
+  不放开的话 release 包会完全连不上后端（表现为登录一直转圈或直接报网络错误）。
+
+  当前策略：全局允许明文。后端切到 HTTPS 之后，把下面 base-config 的
+  cleartextTrafficPermitted 改成 false 即可整体收紧，无需改动 Java/Kotlin 代码。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

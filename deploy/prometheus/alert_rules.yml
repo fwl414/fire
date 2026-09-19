@@ -1,0 +1,192 @@
+# 服务告警规则
+# 指标来源：backend:8000/metrics（见 services/metrics_service.py）
+groups:
+  - name: fire-ai-availability
+    rules:
+      - alert: FireAiBackendDown
+        expr: up{job="fire-ai-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "智慧消防后端不可用"
+          description: "backend:8000 已连续 1 分钟无法抓取指标，请检查容器状态与日志。"
+
+      - alert: FireAiDatabaseNotReady
+        expr: fire_ai_database_ready == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "后端无法连接数据库"
+          description: "/ready 探针报告数据库不可用，工单与告警将无法落库。"
+
+  - name: fire-ai-errors
+    rules:
+      - alert: FireAiHighErrorRate
+        expr: |
+          (
+            sum(rate(fire_ai_http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(fire_ai_http_requests_total[5m])), 0.001)
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "接口 5xx 错误率超过 5%"
+          description: "最近 10 分钟 5xx 占比持续高于 5%，请检查后端日志与依赖服务。"
+
+      - alert: FireAiSlowRequests
+        expr: |
+          (
+            sum(rate(fire_ai_http_request_duration_seconds_sum[5m]))
+            /
+            clamp_min(sum(rate(fire_ai_http_request_duration_seconds_count[5m])), 0.001)
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: backend
+        annotations:
+          summary: "接口平均响应时间超过 2 秒"
+          description: "可能是数据库慢查询或外部大模型调用变慢。"
+
+      - alert: FireAiLoginFailureSpike
+        expr: increase(fire_ai_business_events_total{event="login_failed"}[10m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "登录失败次数突增"
+          description: "10 分钟内登录失败超过 20 次，疑似撞库或暴力破解。"
+
+      - alert: FireAiAccountLockSpike
+        expr: increase(fire_ai_business_events_total{event="login_locked"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: critical
+          service: security
+        annotations:
+          summary: "多个账号被锁定"
+          description: "15 分钟内多个账号触发锁定，请立即排查来源 IP。"
+
+  - name: fire-ai-alerts-loop
+    rules:
+      - alert: FireAiAlertEscalating
+        expr: increase(fire_ai_business_events_total{event="alert_escalated"}[30m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: alert-loop
+        annotations:
+          summary: "出现自动升级的告警"
+          description: "存在重复上报或长时间未闭环的告警，请检查整改与复查流程。"
+
+      - alert: FireAiNoWorkorderGenerated
+        expr: |
+          increase(fire_ai_business_events_total{event="alert_created"}[1h]) > 0
+          and
+          increase(fire_ai_business_events_total{event="workorder_created"}[1h]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: alert-loop
+        annotations:
+          summary: "告警产生但未生成工单"
+          description: "闭环链路可能中断（工单落库失败），请检查后端日志。"
+
+  - name: fire-ai-device
+    rules:
+      - alert: FireAiMqttDisconnected
+        expr: fire_ai_mqtt_enabled == 1 and fire_ai_mqtt_connected == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: device-ingest
+        annotations:
+          summary: "MQTT 接入已断开"
+          description: "MQTT 已启用但未连接 broker，设备数据将无法上报。"
+
+      - alert: FireAiMqttRejectSpike
+        expr: rate(fire_ai_mqtt_messages_total{result="rejected"}[10m]) > 1
+        for: 10m
+        labels:
+          severity: warning
+          service: device-ingest
+        annotations:
+          summary: "MQTT 消息被大量拒绝"
+          description: "可能是签名校验失败、时间戳超窗或 nonce 重放，请检查设备时钟与密钥。"
+
+      - alert: FireAiDeviceSilent
+        expr: |
+          rate(fire_ai_business_events_total{event="device_ingest_heartbeat"}[15m]) == 0
+          and
+          rate(fire_ai_business_events_total{event="device_ingest_telemetry"}[15m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          service: device-ingest
+        annotations:
+          summary: "长时间未收到任何设备数据"
+          description: "设备侧可能整体离线，或接入凭证被吊销。"
+
+  - name: fire-ai-backup
+    rules:
+      - alert: FireAiBackupStale
+        expr: fire_ai_backup_age_seconds > 129600
+        for: 1h
+        labels:
+          severity: critical
+          service: backup
+        annotations:
+          summary: "数据库备份已超过 36 小时未更新"
+          description: "请检查备份计划任务（python db_backup.py backup）是否正常执行。"
+
+      - alert: FireAiNoBackup
+        expr: absent(fire_ai_backup_age_seconds)
+        for: 1h
+        labels:
+          severity: critical
+          service: backup
+        annotations:
+          summary: "未检测到任何数据库备份"
+          description: "备份目录为空或不可读，灾备能力缺失。"
+
+  - name: fire-ai-llm
+    rules:
+      - alert: FireAiLlmCircuitOpen
+        expr: fire_ai_llm_breaker_state == 2
+        for: 5m
+        labels:
+          severity: critical
+          service: llm
+        annotations:
+          summary: "大模型供应商已被熔断"
+          description: "供应商 {{ $labels.provider }} 连续失败达到阈值，AI 分析已降级，请检查配额与密钥。"
+
+      - alert: FireAiLlmFailureSpike
+        expr: fire_ai_llm_calls_total{status="failed"} > 20
+        for: 15m
+        labels:
+          severity: warning
+          service: llm
+        annotations:
+          summary: "近 24 小时大模型调用失败偏多"
+          description: "失败次数超过 20 次，可能是超时、限流或密钥失效；可查看 /api/settings/llm-calls。"
+
+  - name: fire-ai-review
+    rules:
+      - alert: FireAiReviewBacklog
+        expr: fire_ai_review_pending > 20
+        for: 30m
+        labels:
+          severity: warning
+          service: ai-review
+        annotations:
+          summary: "AI 复核任务积压"
+          description: "待人工复核的 AI 结果超过 20 条且持续 30 分钟，工单下发被暂缓，请安排人员复核（/api/ai-review/tasks）。"

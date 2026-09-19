@@ -1,0 +1,26 @@
+name: fire_ai_agent_mobile
+description: Fire AI Agent mobile MVP
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  image_picker: ^1.0.7
+  shared_preferences: ^2.2.2
+  # 告警实时推送：连后端 /ws/notifications（首帧发 token 鉴权）
+  web_socket_channel: ^3.0.1
+  # 扫码巡检：扫设备二维码取 device_code
+  mobile_scanner: ^6.0.2
+  # 现场上报时带定位，便于核对是否真的到了点位
+  geolocator: ^13.0.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # analysis_options.yaml 里 include 了 package:flutter_lints/flutter.yaml，
+  # 但之前没声明这个依赖，导致整套推荐规则实际未生效
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

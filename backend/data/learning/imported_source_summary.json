@@ -1,0 +1,195 @@
+{
+  "version": "V1.0.0",
+  "source_upload": "中级消防设施操作员（监控方向）题库文档、模拟试卷、基础知识",
+  "existing_question_count": 13,
+  "xlsx_imported_count": 957,
+  "pdf_parsed_count": 1433,
+  "merged_question_count": 2526,
+  "source_files": [
+    {
+      "filename": "2.基础知识100个知识点.pdf",
+      "path": "新建文件夹/2.基础知识100个知识点.pdf",
+      "group": "基础知识材料",
+      "parsed_question_count": 0
+    },
+    {
+      "filename": "3.最新基础口诀.pdf",
+      "path": "新建文件夹/3.最新基础口诀.pdf",
+      "group": "基础知识材料",
+      "parsed_question_count": 0
+    },
+    {
+      "filename": "1.职业道德.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/1.职业道德.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 53
+    },
+    {
+      "filename": "2.消防工作概述.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/2.消防工作概述.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 29
+    },
+    {
+      "filename": "3.燃烧和火灾基本知识.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/3.燃烧和火灾基本知识.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 67
+    },
+    {
+      "filename": "4.建筑防火基本知识.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/4.建筑防火基本知识.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 80
+    },
+    {
+      "filename": "5.电气消防基本知识.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/5.电气消防基本知识.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 46
+    },
+    {
+      "filename": "6.消防设施基本知识.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/6.消防设施基本知识.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 85
+    },
+    {
+      "filename": "7.初气火灾处置基础知识.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/7.初气火灾处置基础知识.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 51
+    },
+    {
+      "filename": "8.计算机基础知识.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/8.计算机基础知识.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 63
+    },
+    {
+      "filename": "9.相关法律法规知识.pdf",
+      "path": "新建文件夹/1.中级消防【基础知识】习题集/9.相关法律法规知识.pdf",
+      "group": "基础知识习题集",
+      "parsed_question_count": 55
+    },
+    {
+      "filename": "1.设施监控.pdf",
+      "path": "新建文件夹/1.模块习题/1.设施监控.pdf",
+      "group": "模块习题",
+      "parsed_question_count": 58
+    },
+    {
+      "filename": "2.设施操作.pdf",
+      "path": "新建文件夹/1.模块习题/2.设施操作.pdf",
+      "group": "模块习题",
+      "parsed_question_count": 88
+    },
+    {
+      "filename": "3.设施保养.pdf",
+      "path": "新建文件夹/1.模块习题/3.设施保养.pdf",
+      "group": "模块习题",
+      "parsed_question_count": 58
+    },
+    {
+      "filename": "10.《中级监控》考前摸底试卷（重点做）.pdf",
+      "path": "新建文件夹/模拟试卷/10.《中级监控》考前摸底试卷（重点做）.pdf",
+      "group": "模拟试卷",
+      "parsed_question_count": 140
+    },
+    {
+      "filename": "5.基础模拟考试试卷.pdf",
+      "path": "新建文件夹/模拟试卷/5.基础模拟考试试卷.pdf",
+      "group": "模拟试卷",
+      "parsed_question_count": 60
+    },
+    {
+      "filename": "5.理论模拟试卷1（新题）.pdf",
+      "path": "新建文件夹/模拟试卷/5.理论模拟试卷1（新题）.pdf",
+      "group": "模拟试卷",
+      "parsed_question_count": 140
+    },
+    {
+      "filename": "6.理论模拟考试卷2（新题）.pdf",
+      "path": "新建文件夹/模拟试卷/6.理论模拟考试卷2（新题）.pdf",
+      "group": "模拟试卷",
+      "parsed_question_count": 80
+    },
+    {
+      "filename": "7.中级监控理论真题测试卷（重点做-新）第一套.pdf",
+      "path": "新建文件夹/模拟试卷/7.中级监控理论真题测试卷（重点做-新）第一套.pdf",
+      "group": "模拟试卷",
+      "parsed_question_count": 140
+    },
+    {
+      "filename": "8.中级监控理论真题试卷（重点做-新）第二套.pdf",
+      "path": "新建文件夹/模拟试卷/8.中级监控理论真题试卷（重点做-新）第二套.pdf",
+      "group": "模拟试卷",
+      "parsed_question_count": 140
+    }
+  ],
+  "note": "题库已按中级消防设施操作员、理论考试/实操考试、模块、知识点进行补充分类。导入资料作为学习题库使用，不默认宣称官方真题。",
+  "supplement_upload": "补充消防知识和题目",
+  "supplement_parsed_count": 238,
+  "exam_subjects": [
+    "理论考试",
+    "实操考试"
+  ],
+  "supplement_source_files": [
+    {
+      "name": "1.口述题.pdf",
+      "path": "实操题/1.口述题.pdf",
+      "parsed_question_count": 106,
+      "inferred_subject": "实操考试",
+      "inferred_module": "综合知识"
+    },
+    {
+      "name": "2.识别题.pdf",
+      "path": "实操题/2.识别题.pdf",
+      "parsed_question_count": 70,
+      "inferred_subject": "实操考试",
+      "inferred_module": "综合知识"
+    },
+    {
+      "name": "3.指认题.pdf",
+      "path": "实操题/3.指认题.pdf",
+      "parsed_question_count": 50,
+      "inferred_subject": "实操考试",
+      "inferred_module": "综合知识"
+    },
+    {
+      "name": "中级监控操作技能考核要点38个考点.pdf",
+      "path": "实操题/中级监控操作技能考核要点38个考点.pdf",
+      "parsed_question_count": 0,
+      "inferred_subject": "实操考试",
+      "inferred_module": "综合知识"
+    },
+    {
+      "name": "2.中级监控理论考点100个.pdf",
+      "path": "理论知识/2.中级监控理论考点100个.pdf",
+      "parsed_question_count": 0,
+      "inferred_subject": "理论考试",
+      "inferred_module": "综合知识"
+    },
+    {
+      "name": "3.理论必考数字类题目汇总.pdf",
+      "path": "理论知识/3.理论必考数字类题目汇总.pdf",
+      "parsed_question_count": 0,
+      "inferred_subject": "理论考试",
+      "inferred_module": "综合知识"
+    },
+    {
+      "name": "4..中级理论练习6套1200道题.pdf",
+      "path": "理论知识/4..中级理论练习6套1200道题.pdf",
+      "parsed_question_count": 0,
+      "inferred_subject": "理论考试",
+      "inferred_module": "综合知识"
+    },
+    {
+      "name": "9.消操《中级监控》五星高频题点汇-新.pdf",
+      "path": "理论知识/9.消操《中级监控》五星高频题点汇-新.pdf",
+      "parsed_question_count": 12,
+      "inferred_subject": "理论考试",
+      "inferred_module": "综合知识"
+    }
+  ]
+}

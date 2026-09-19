@@ -1,0 +1,33 @@
+{
+  "name": "fire-ai-agent-frontend",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "axios": "^1.6.0",
+    "echarts": "^6.1.0",
+    "element-plus": "^2.7.0",
+    "flv.js": "^1.6.2",
+    "hls.js": "^1.5.0",
+    "pinia": "^4.0.2",
+    "three": "^0.185.1",
+    "vite": "^5.0.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.2",
+    "terser": "^5.51.2",
+    "unplugin-auto-import": "^21.1.0",
+    "unplugin-vue-components": "^32.1.0"
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+}

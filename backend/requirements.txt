@@ -1,0 +1,20 @@
+fastapi>=0.119.0
+uvicorn>=0.35.0
+pydantic>=2.12.0,<3.0.0
+SQLAlchemy>=2.0.40
+alembic>=1.13.0
+psycopg[binary]>=3.2.0,<4.0.0
+python-multipart>=0.0.20
+python-dotenv>=1.1.0
+httpx>=0.28.0
+aiofiles>=24.1.0
+qrcode[pil]>=7.4.2
+PyJWT>=2.9.0,<3.0.0
+paho-mqtt>=2.1.0
+# 风险预测模型（训练与推理），需要 numpy；1.9 起提供 Python 3.14 的 cp314 wheel
+scikit-learn>=1.9.0
+# 系统监控：采集真实的主机指标（CPU/内存/磁盘/网络/进程），替代页面上的随机数模拟
+psutil>=7.0.0
+# CAD 图纸解析：从 DXF 里按图层名提取墙/门/消防设备/房间。
+# 注意 ezdxf 只读 DXF，DWG 是二进制格式必须先转换成 DXF
+ezdxf>=1.4.0

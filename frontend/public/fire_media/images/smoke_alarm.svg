@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" rx="28" fill="#f8fafc"/>
+  <circle cx="110" cy="110" r="54" fill="#64748b" opacity="0.18"/>
+  <circle cx="530" cy="260" r="70" fill="#64748b" opacity="0.12"/>
+  <rect x="70" y="70" width="500" height="220" rx="24" fill="white" stroke="#64748b" stroke-width="4"/>
+  <text x="320" y="155" text-anchor="middle" font-family="Microsoft YaHei, Arial" font-size="46" font-weight="700" fill="#64748b">烟雾报警</text>
+  <text x="320" y="215" text-anchor="middle" font-family="Microsoft YaHei, Arial" font-size="26" fill="#334155">确认火情并疏散</text>
+  <text x="320" y="270" text-anchor="middle" font-family="Microsoft YaHei, Arial" font-size="18" fill="#64748b">智慧消防学习资源示意图</text>
+</svg>

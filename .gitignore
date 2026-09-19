@@ -1,0 +1,57 @@
+__pycache__/
+*.pyc
+*.pyo
+.Python
+.env
+.env.local
+.env.*.local
+
+# SQLite 运行库 / 备份 / 测试库：全部由代码在启动时生成，不入库
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.db.*
+backend/backups/
+backend/data/_cleanup_backup_*/
+# 巡检报告是运行时产物（backend/data/reports/tenant_*）
+backend/data/reports/
+backend/data/notification_read.json
+
+# 由验证/部署流程生成的真实环境文件（内含数据库密码、JWT 密钥、监控口令），只提交 *.example 模板
+.env.staging
+.env.production
+.env.development
+.env.dev
+
+# 前端测试与构建产物
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+# 历史遗留的旧依赖目录（体积大且非当前依赖）
+frontend/node_modules_old/
+
+# 移动端签名材料（与 mobile_app/.gitignore 重复，作为兜底）
+*.jks
+*.keystore
+key.properties
+# 开发环境自动生成的视频凭证密钥，禁止入库
+.video_credential_key
+# TLS 证书与私钥（含 Let's Encrypt 校验目录），禁止入库
+certs/
+fire_ai_agent*.db
+uploads/
+# 风险预测模型产物（训练生成，不入库）
+backend/artifacts/
+app.log
+*.log
+dist/
+node_modules/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+docker-compose.override.yml

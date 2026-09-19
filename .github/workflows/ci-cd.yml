@@ -1,0 +1,325 @@
+# CI/CD 流水线
+#
+# 触发方式：
+#   - push / pull_request ：跑校验（后端全量 pytest、前端构建、移动端 analyze+test、镜像可构建）
+#   - push tag v*         ：校验 + 校验生产镜像可构建（发布产物由部署主机上的 scripts/release.sh 生成）
+#   - 手动 workflow_dispatch：
+#       action=ci      只跑校验
+#       action=deploy  在部署主机上执行 scripts/release.sh <tag>（构建镜像 → 迁移 → 切换 → 健康检查 → 失败自动回滚）
+#       action=rollback 在部署主机上执行 scripts/rollback.sh <tag>
+#
+# 部署任务需要在仓库里配置以下 Secrets（缺任一项会在守卫步骤里直接失败并给出提示）：
+#   DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY / DEPLOY_PATH
+#   其中 DEPLOY_PATH 是部署主机上本仓库的绝对路径（该主机需已装 git 与 docker）。
+#
+# 说明：镜像在部署主机上构建（scripts/release.sh 的既有流程），CI 只做「能不能构建」的校验，
+# 不推送到镜像仓库，避免引入额外的仓库凭据与拉流权限配置。
+name: CI/CD
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 要执行的动作
+        type: choice
+        options: [ci, deploy, rollback]
+        default: ci
+      tag:
+        description: 版本号（deploy 用要发布的版本，rollback 用要回滚到的版本）
+        type: string
+        default: ""
+
+concurrency:
+  # 同一分支的校验互相覆盖；发布/回滚不并发执行
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.action || 'ci' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+env:
+  # 与 backend/pyproject.toml 的 requires-python、Dockerfile 的基础镜像、本地开发环境保持一致
+  PYTHON_VERSION: "3.14"
+  NODE_VERSION: "20"
+  # 与本地开发所用的 Flutter 版本保持一致（见 mobile_app/README.md）
+  FLUTTER_VERSION: "3.47.5"
+  JAVA_VERSION: "17"
+
+jobs:
+  # ---------------- 校验：后端 ----------------
+  backend-test:
+    name: 后端测试（pytest 全量）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: 安装依赖
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 结构一致性（模型与迁移必须一致）
+        working-directory: backend
+        env:
+          DATABASE_URL: sqlite:///./_ci_schema_check.db
+        run: |
+          python -c "from services.db_migration_service import run_migrations; run_migrations()"
+          python - <<'PY'
+          from services.db_migration_service import alembic_config
+          from alembic import command
+          command.check(alembic_config())
+          print("模型与迁移一致")
+          PY
+
+      - name: 全量测试
+        working-directory: backend
+        run: python -m pytest tests/ -q
+
+  # ---------------- 校验：前端 ----------------
+  frontend-build:
+    name: 前端构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # 本项目统一用 yarn（package.json 的 packageManager 字段）；--frozen-lockfile 保证锁文件不被改写
+      - name: 安装依赖
+        working-directory: frontend
+        run: yarn install --frozen-lockfile --ignore-engines
+
+      - name: 构建
+        working-directory: frontend
+        run: npm run build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+  # ---------------- 校验：移动端（Flutter） ----------------
+  # analyze/test 每次 push 都跑；APK 构建较慢，只在 PR 与手动 ci 时跑（与 e2e 同一策略）。
+  mobile-analyze-test:
+    name: 移动端 analyze + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 安装依赖
+        run: flutter pub get
+
+      # analysis_options.yaml include 了 package:flutter_lints/flutter.yaml，--fatal-infos 保证 lint 真正卡住流水线
+      - name: 静态分析
+        run: flutter analyze --fatal-infos
+
+      # test/live_api_smoke_test.dart 需要后端跑在 127.0.0.1:8000，未启动时整组自动跳过，CI 里不会因此失败
+      - name: 单元 + Widget 测试
+        run: flutter test
+
+  mobile-apk:
+    name: 移动端 APK 构建
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.action == 'ci')
+    runs-on: ubuntu-latest
+    needs: [mobile-analyze-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # runner 镜像自带 Android SDK 且 licenses 已接受，这里只做兜底，避免镜像变动时直接构建失败
+      - name: 接受 Android licenses（兜底）
+        run: yes | flutter doctor --android-licenses || true
+
+      # API_BASE_URL 通过 --dart-define 编译进包。仓库变量 vars.API_BASE_URL 未配置时退回模拟器回环地址，
+      # 此处目的只是验证「能不能出包」；正式分发包请用 mobile_app/build_apk.bat 指定真实后端地址。
+      - name: 构建 release APK
+        working-directory: mobile_app
+        run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.API_BASE_URL || 'http://10.0.2.2:8000' }}
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-apk
+          path: mobile_app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
+
+  # ---------------- 校验：生产镜像 ----------------
+  docker-build:
+    name: 生产镜像构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 构建后端镜像（不推送）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: fire-ai-agent-backend:ci-${{ github.sha }}
+
+  # ---------------- 校验：端到端（E2E 需要同时起后端与前端，放在最后且只按需跑） ----------------
+  e2e:
+    name: 前端 E2E
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.action == 'ci')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # playwright 会自动拉起后端（独立端口 + 独立 SQLite 库），因此这里也要装后端依赖
+      - name: 安装后端依赖
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: yarn install --frozen-lockfile --ignore-engines
+
+      - name: 安装 Playwright 浏览器
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: 运行 E2E
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: 上传失败产物
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+
+  # ---------------- 发布（手动触发） ----------------
+  deploy:
+    name: 发布到部署主机
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-build, docker-build]
+    environment: production
+    steps:
+      - name: 校验发布参数与密钥
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          missing=""
+          [ -n "$DEPLOY_HOST" ] || missing="$missing DEPLOY_HOST"
+          [ -n "$DEPLOY_USER" ] || missing="$missing DEPLOY_USER"
+          [ -n "$DEPLOY_SSH_KEY" ] || missing="$missing DEPLOY_SSH_KEY"
+          [ -n "$DEPLOY_PATH" ] || missing="$missing DEPLOY_PATH"
+          if [ -n "$missing" ]; then
+            echo "::error::缺少仓库 Secrets：$missing（配置方式见 .github/workflows/ci-cd.yml 顶部注释）"
+            exit 1
+          fi
+          if [ -z "$TAG" ]; then
+            echo "::error::必须填写 tag（版本号），例如 v1.2.0"
+            exit 1
+          fi
+
+      - name: 在部署主机上执行 scripts/release.sh
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # 部署主机上的 release.sh 自带「发布前备份 → 构建 → 迁移 → 切换 → 健康检查 → 失败自动回滚」
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && git fetch --tags --force && git checkout '$TAG' && ./scripts/release.sh '$TAG'"
+
+  # ---------------- 回滚（手动触发） ----------------
+  rollback:
+    name: 回滚部署主机
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: 校验回滚参数与密钥
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          missing=""
+          [ -n "$DEPLOY_HOST" ] || missing="$missing DEPLOY_HOST"
+          [ -n "$DEPLOY_USER" ] || missing="$missing DEPLOY_USER"
+          [ -n "$DEPLOY_SSH_KEY" ] || missing="$missing DEPLOY_SSH_KEY"
+          [ -n "$DEPLOY_PATH" ] || missing="$missing DEPLOY_PATH"
+          if [ -n "$missing" ]; then
+            echo "::error::缺少仓库 Secrets：$missing"
+            exit 1
+          fi
+
+      - name: 在部署主机上执行 scripts/rollback.sh
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # tag 留空即回滚到上一个版本（rollback.sh 的默认行为）
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && ./scripts/rollback.sh ${TAG}"

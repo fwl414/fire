@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标前景：火焰。108dp 画布，火焰控制在中央 66dp 安全区内 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M54,22 C58,32 72,44 74,58 C76,72 66,85 54,85 C42,85 32,73 32,60 C32,47 46,33 54,22 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="20"
+                android:endX="0"
+                android:endY="86">
+                <item android:offset="0" android:color="#FFFDBA3C" />
+                <item android:offset="1" android:color="#FFEA580C" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M54,50 C57,57 65,62 65,69 C65,76 60,81 54,81 C48,81 43,76 43,69 C43,62 51,57 54,50 Z"
+        android:fillColor="#FFFEF0C7" />
+</vector>

@@ -1,0 +1,264 @@
+from __future__ import annotations
+
+from services.agent_decision_service import make_decision_policy, get_risk_style
+from services.hardware_event_service import (
+    get_event_types,
+    list_hardware_events,
+    create_hardware_event,
+    get_hardware_event,
+    update_hardware_event_status,
+    get_hardware_dashboard,
+)
+from services.rag_admin_service import (
+    list_rag_entries,
+    upsert_rag_entry,
+    get_rag_entry,
+    delete_rag_entry,
+    search_rag_entries,
+    get_rag_stats,
+)
+from services.learning_profile_service import (
+    save_learning_attempt,
+    list_learning_attempts,
+    get_wrongbook,
+    get_learning_profile,
+)
+from services.health_service import get_system_health
+from services.record_persistence_service import (
+    save_inspection_record, list_inspection_records, get_inspection_record,
+    list_workorders, get_workorder, update_workorder_status,
+    export_report_text, get_record_dashboard, update_workorder_evidence, submit_workorder_review,
+)
+
+
+from services.workorder_service import (
+    generate_workorders_from_inspection,
+    simulate_workorder_flow,
+    get_workorder_dashboard,
+    build_inspection_report,
+)
+
+from services.product_metrics_service import get_product_dashboard_metrics, get_page_guides
+
+from services.inspection_learning_recommend_service import recommend_learning_for_hazards
+from services.demo_scenario_service import get_demo_scenarios, get_demo_scenario
+
+from services.competition_service import (
+    get_competition_overview,
+    get_technical_route,
+    get_innovation_points,
+    get_demo_script,
+    get_agent_evaluation_matrix,
+    get_paper_materials,
+)
+
+from services.learning_graph_service import get_learning_knowledge_graph, search_learning_rag, get_quiz_filter_options
+
+from services.quiz_import_service import preview_import
+from services.learning_quiz_agent import build_quiz_agent_feedback
+
+from services.learning_ai_service import analyze_learning_progress
+
+from services.learning_service import (
+    get_learning_overview,
+    get_learning_topics,
+    get_courses,
+    get_course,
+    get_videos,
+    get_quiz,
+    submit_quiz,
+    recommend_learning_resources,
+    get_exam_levels,
+    get_quiz_grouped,
+    get_quiz_question,
+    get_learning_source_summary,
+    get_learning_source_docs,
+    get_exam_subjects,
+)
+
+from services.enhanced_evaluation import run_enhanced_evaluation
+from typing import Dict, Any, List
+from services.hardware_gateway import (
+    get_hardware_overview,
+    get_supported_hardware_types,
+    get_mock_hardware_latest,
+    sensor_report_payload_example,
+    accept_sensor_report,
+    accept_hardware_event,
+    accept_heartbeat,
+)
+from services.project_overview import get_project_overview
+from services.rag_examples import get_rag_recommended_questions, get_rag_scene_cards
+
+from services.archive_report_service import (
+    REPORT_TEMPLATES,
+    list_archives,
+    get_archive_dashboard,
+    get_archive_detail,
+    build_enhanced_report,
+)
+from services.notification_service import build_notifications, mark_all_notifications_read
+from services.report_verify_service import verify_report
+from services.operation_log_service import list_operation_logs, get_operation_log_dashboard, add_operation_log, clear_demo_operation_logs
+from services.auth_service import (
+    login as auth_login,
+    refresh_token as auth_refresh_token,
+    logout as auth_logout,
+    change_password as auth_change_password,
+    list_demo_accounts,
+    role_permissions,
+    get_current_user,
+    get_user_role,
+    get_user_permissions,
+)
+from services.common_utils import GlobalExceptionMiddleware, logger
+from services.operation_log_middleware import OperationLogMiddleware
+from services.user_management_service import (
+    list_roles, get_role_all, get_role_by_id, create_role, update_role, delete_role,
+    list_users, get_user_by_id, create_user, update_user, reset_user_password, delete_user, toggle_user_status,
+    get_all_permissions,
+)
+from services.business_crud_service import (
+    list_devices as crud_list_devices, get_device as crud_get_device,
+    create_device as crud_create_device, update_device as crud_update_device,
+    delete_device as crud_delete_device, add_telemetry, get_device_telemetry,
+    list_inspection_records as crud_list_inspections, get_inspection_record as crud_get_inspection,
+    create_inspection_record, update_inspection_record,
+    list_workorders as crud_list_workorders, get_workorder as crud_get_workorder,
+    create_workorder, update_workorder_status as crud_update_workorder_status,
+    delete_workorder,
+    list_alerts as crud_list_alerts, get_alert as crud_get_alert,
+    create_alert, update_alert, get_alert_statistics as crud_get_alert_statistics,
+    list_buildings as crud_list_buildings, get_building as crud_get_building,
+    update_building_risk,
+)
+from database import User, Role
+
+
+import json
+import traceback
+from datetime import datetime
+from typing import Optional
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, Depends, UploadFile, File, Form, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
+from sqlalchemy.orm import Session
+
+from database import (
+    init_db, get_db, Device, DeviceTelemetry, InspectionRecord, FaultTicket, ModelConfig
+)
+from schemas import DeviceCreate, DeviceUpdate, TelemetryCreate, ModelConfigCreate, ModelConfigUpdate, ModelTestRequest
+from services.agent_service import run_inspection_agent
+from services.multimodal_agent import MultiModalAgent
+from services.telemetry_analyzer import analyze_telemetry_single, analyze_telemetry_history, analyze_multiple_telemetry, interpret_device_alert
+from services.enhanced_risk_engine import calculate_building_risk, build_risk_factors_from_data, EnhancedRiskEngine
+from services.risk_update_service import (
+    update_risk_score, get_risk_history, get_risk_trend,
+    handle_workorder_status_change, handle_new_inspection_result,
+    recalculate_building_risk, init_demo_risk_history
+)
+from services.alert_agent_service import process_device_alert, get_processed_alerts, get_alert_statistics, init_demo_alerts
+from services.knowledge_base import answer_question
+from services.llm_fire_analyzer import answer_question_with_llm
+from services.demo_seed import seed_demo_data, seed_runtime_demo_data, seed_hardware_demo_data
+from services.evaluation_service import run_rule_evaluation
+from services.defense_service import get_defense_demo_flow
+from services.rag_engine import get_knowledge_overview, debug_retrieve
+from services.llm_gateway import call_text_model, call_vision_model
+from services.model_registry import serialize_config, activate_config, get_active_config
+from routers import agent_api
+from routers import alert
+from routers import auth
+from routers import building
+from routers import business
+from routers import competition
+from routers import dashboard
+from routers import demo
+from routers import device
+from routers import evaluation
+from routers import hardware
+from routers import inspection
+from routers import knowledge
+from routers import learning
+from routers import multimodal
+from routers import notification
+from routers import operation_log
+from routers import product
+from routers import report_center
+from routers import report_verify
+from routers import risk
+from routers import settings
+from routers import system
+from routers import tenant
+from routers import user
+from routers import websocket_api
+from routers import workorder
+
+app.include_router(agent_api.router)
+app.include_router(alert.router)
+app.include_router(auth.router)
+app.include_router(building.router)
+app.include_router(business.router)
+app.include_router(competition.router)
+app.include_router(dashboard.router)
+app.include_router(demo.router)
+app.include_router(device.router)
+app.include_router(evaluation.router)
+app.include_router(hardware.router)
+app.include_router(inspection.router)
+app.include_router(knowledge.router)
+app.include_router(learning.router)
+app.include_router(multimodal.router)
+app.include_router(notification.router)
+app.include_router(operation_log.router)
+app.include_router(product.router)
+app.include_router(report_center.router)
+app.include_router(report_verify.router)
+app.include_router(risk.router)
+app.include_router(settings.router)
+app.include_router(system.router)
+app.include_router(tenant.router)
+app.include_router(user.router)
+app.include_router(websocket_api.router)
+app.include_router(workorder.router)
+
+
+load_dotenv()
+
+app = FastAPI(title="智慧消防管理系统 V12.8.3", version="12.8.3")
+
+INSPECTION_TASK_CACHE: Dict[str, Any] = {}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.add_middleware(GlobalExceptionMiddleware)
+app.add_middleware(OperationLogMiddleware)
+
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
+    from services.websocket_service import manager, init_websocket
+    manager.start_broadcast_worker()
+    init_websocket(app)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print("========== 后端异常 ==========")
+    traceback.print_exc()
+    print("============================")
+    return JSONResponse(
+        status_code=500,
+        content={"code": 500, "message": "后端接口异常", "error": str(exc), "path": str(request.url)},
+    )
+
+

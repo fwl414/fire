@@ -1,0 +1,165 @@
+[
+  {
+    "id": "electrical_fire",
+    "title": "电气火灾处置",
+    "category": "电气安全",
+    "level": "基础",
+    "cover": "/fire_media/images/electrical_fire.svg",
+    "summary": "学习电气火灾的常见原因、风险表现和处置原则。",
+    "knowledge_points": [
+      "插排串联、超负荷用电、线路老化容易引发电气火灾。",
+      "疑似电气火灾应优先切断电源。",
+      "未断电前不宜直接用水扑救。",
+      "可使用干粉灭火器或二氧化碳灭火器处置初期电气火灾。"
+    ],
+    "related_hazards": [
+      "插座过载",
+      "电线杂乱",
+      "配电箱周围堆物"
+    ],
+    "flow": [
+      "发现异常",
+      "切断电源",
+      "疏散周边人员",
+      "使用合适灭火器",
+      "上报并复查"
+    ],
+    "related_videos": [
+      "video_electrical_fire_001"
+    ],
+    "related_questions": [
+      "q_electrical_001",
+      "q_electrical_002"
+    ]
+  },
+  {
+    "id": "fire_lane",
+    "title": "消防通道与疏散安全",
+    "category": "疏散安全",
+    "level": "基础",
+    "cover": "/fire_media/images/blocked_exit.svg",
+    "summary": "学习消防通道、疏散通道和安全出口的管理要求。",
+    "knowledge_points": [
+      "消防通道和安全出口应保持畅通。",
+      "不得在疏散通道堆放纸箱、桌椅、电动车等障碍物。",
+      "通道堵塞会影响人员疏散和消防救援。",
+      "发现堵塞应立即清理并纳入复查。"
+    ],
+    "related_hazards": [
+      "消防通道堵塞",
+      "可燃物堆积"
+    ],
+    "flow": [
+      "发现堵塞",
+      "立即清理",
+      "设置警示",
+      "责任人复查",
+      "闭环归档"
+    ],
+    "related_videos": [
+      "video_evacuation_001"
+    ],
+    "related_questions": [
+      "q_lane_001",
+      "q_lane_002"
+    ]
+  },
+  {
+    "id": "extinguisher",
+    "title": "灭火器配置与使用",
+    "category": "设施管理",
+    "level": "基础",
+    "cover": "/fire_media/images/extinguisher.svg",
+    "summary": "学习灭火器配置、巡检和初期火灾处置方法。",
+    "knowledge_points": [
+      "灭火器应放置在明显、便于取用的位置。",
+      "不得被纸箱、杂物遮挡。",
+      "巡检时应检查压力表、铅封、喷管、瓶体和有效期。",
+      "初期火灾处置时应根据火灾类型选择合适灭火器。"
+    ],
+    "related_hazards": [
+      "灭火器缺失",
+      "灭火器被遮挡"
+    ],
+    "flow": [
+      "检查位置",
+      "检查压力",
+      "检查有效期",
+      "发现问题",
+      "补齐或更换"
+    ],
+    "related_videos": [
+      "video_extinguisher_001"
+    ],
+    "related_questions": [
+      "q_ext_001",
+      "q_ext_002"
+    ]
+  },
+  {
+    "id": "ev_battery",
+    "title": "电动车违规充电风险",
+    "category": "电动车安全",
+    "level": "基础",
+    "cover": "/fire_media/images/ev_battery.svg",
+    "summary": "学习电动车入楼、飞线充电和电池热失控风险。",
+    "knowledge_points": [
+      "电动车不得在楼道、疏散通道、安全出口或室内违规停放充电。",
+      "电池热失控时火势发展快、烟气毒性强。",
+      "飞线充电存在短路、过热和火灾风险。",
+      "应引导车辆进入集中充电区域。"
+    ],
+    "related_hazards": [
+      "电动车违规充电",
+      "消防通道堵塞"
+    ],
+    "flow": [
+      "发现违规充电",
+      "立即停止充电",
+      "移至集中区域",
+      "登记责任人",
+      "加强复查"
+    ],
+    "related_videos": [
+      "video_ev_001"
+    ],
+    "related_questions": [
+      "q_ev_001",
+      "q_ev_002"
+    ]
+  },
+  {
+    "id": "initial_response",
+    "title": "初期火情应急处置",
+    "category": "应急处置",
+    "level": "进阶",
+    "cover": "/fire_media/images/smoke_alarm.svg",
+    "summary": "学习发现烟雾、焦糊味、明火时的应急处置流程。",
+    "knowledge_points": [
+      "发现烟雾、焦糊味或明火时，应先判断现场安全。",
+      "电气相关风险应优先切断电源。",
+      "火势扩大、烟雾较大或人员无法安全处置时应报警并疏散。",
+      "处置后应保留记录并复盘原因。"
+    ],
+    "related_hazards": [
+      "烟雾",
+      "明火",
+      "电线杂乱"
+    ],
+    "flow": [
+      "发现异常",
+      "确认火情",
+      "切断电源",
+      "初期处置",
+      "报警疏散",
+      "复盘整改"
+    ],
+    "related_videos": [
+      "video_initial_fire_001"
+    ],
+    "related_questions": [
+      "q_response_001",
+      "q_response_002"
+    ]
+  }
+]

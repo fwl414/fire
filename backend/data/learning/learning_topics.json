@@ -1,0 +1,27 @@
+[
+  {
+    "id": "electrical_fire",
+    "name": "电气火灾",
+    "category": "电气安全"
+  },
+  {
+    "id": "fire_lane",
+    "name": "消防通道",
+    "category": "疏散安全"
+  },
+  {
+    "id": "extinguisher",
+    "name": "灭火器",
+    "category": "设施管理"
+  },
+  {
+    "id": "ev_battery",
+    "name": "电动车安全",
+    "category": "电动车安全"
+  },
+  {
+    "id": "initial_response",
+    "name": "初期火情",
+    "category": "应急处置"
+  }
+]
