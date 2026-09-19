@@ -667,7 +667,7 @@ ingest_alert 产生/升级告警
 
 | 级别 | 问题 | 说明与建议 |
 | --- | --- | --- |
-| 中 | 流水线尚未在 GitHub 上实跑 | 当前工作目录不是 git 仓库，工作流只是文件。推到 GitHub 后需跑一次 PR 验证；`deploy`/`rollback` 还需配置 `DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/DEPLOY_PATH` 四个 Secrets |
+| 中 | ~~流水线尚未在 GitHub 上实跑~~ **已关闭** | 仓库已推到 `github.com/fwl414/fire` 并实跑多轮，6 个校验作业全绿（见 13.11）。仅 `deploy`/`rollback` 仍未实跑 —— 需配置四个 Secrets（`DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/DEPLOY_PATH`）并有可用部署主机 |
 | 低 | 本机拉取 Docker Hub 不通，构建需走镜像源 | 本机直连 `registry-1.docker.io` 超时（Docker Desktop 未配 HTTPS 代理），构建基础镜像时改用 `docker.m.daocloud.io/library/python:3.14-slim` 拉取后 `docker tag` 成 `python:3.14-slim` 才成功。**部署主机若同样访问不了 Docker Hub，需先配置 registry-mirrors 或预拉基础镜像**，否则 `docker compose build` 会在第一步失败 |
 | 低 | 短信通知通道未实现 | 需要短信服务商凭据；现有通道表结构与前端表单是「按类型渲染字段」的，新增类型只需在 `CHANNEL_TYPES` 里加一段配置 + 一个发送函数 |
 | 低 | 通知功能未加 E2E 用例 | 已做接口级验收与 17 条单测；若要在浏览器里回归「新增通道 → 测试 → 删除」链路，可补一条 `e2e/notification-channel.spec.js` |
@@ -1510,6 +1510,37 @@ Web 端大屏实时推送与移动端 WebSocket 全都连不上，而且这个�
 
 本地回归：`realtime-push + data-screen + audit-log` → **12 passed（1 flaky，非改动项）**；
 并把本机 `websockets` 升到 CI 会装的 17.1 再跑一次 WS 用例 → `3 passed`，确认版本组合没问题。
+
+#### run #7：全绿
+
+补上 `websockets` 后同一分支再跑一轮（`a7313ac`），8 个作业里 6 个 success、2 个按设计 skipped：
+
+| 作业 | 结果 | 耗时 |
+| --- | --- | --- |
+| 后端测试（pytest 全量） | success | 68s |
+| 前端构建 | success | 51s |
+| 移动端 analyze + test | success | 47s |
+| 生产镜像构建 | success | 44s |
+| 移动端 APK 构建 | success | 363s |
+| **前端 E2E** | **success** | 477s（用例步骤 **404s**；上一轮是 586s 且失败） |
+| 发布到部署主机 | skipped | — |
+| 回滚部署主机 | skipped | — |
+
+三个 WS 用例在 CI 里**首次通过**；E2E 用例步骤耗时也从 586s 降到 404s —— 3D 用例不再空等
+90s 超时、audit-log 不再重试。
+
+至此 PR #1 上四项修复全部经真实 CI 验证：
+
+| # | 修复 | 首次通过 |
+| --- | --- | --- |
+| 1 | `test_cpu_and_network_need_two_samples` 偶发失败（计数器粒度） | run #3 起 |
+| 2 | 后端测试作业缺 pytest（`requirements-dev.txt`） | run #5 起 |
+| 3 | **WebSocket 生产依赖缺失（`websockets>=16.0`）** | run #7 起 |
+| 4 | E2E 的 login 冷启动超时与 3D 扫描导航竞态 | run #7 起 |
+
+> 仍未实跑的只剩 `deploy` / `rollback`：两者要 `workflow_dispatch` + 仓库配置
+> `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH` 四个 Secrets，且本机没有
+> 可用的部署主机，因此这两个作业目前只有「结构上存在 + 守卫步骤会明确报缺哪个 Secret」的保证。
 
 #### 查 Actions 日志的办法
 
