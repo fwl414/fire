@@ -2872,6 +2872,19 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
+/*
+ * 面板被 max-height 卡住时，.panel-body 作为 flex 子项默认 min-height:auto 会拒绝收缩，
+ * 于是列表越长、越会溢出面板框盖住下方面板（列表自身也永远不滚动）。
+ * 这里让 body 成为可收缩的 flex 容器，内部 .alarm-scroll-list 的 flex:1 + overflow-y:auto 才真正生效。
+ */
+.alarm-scroll-panel .panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .alarm-badge {
   margin-left: auto;
   background: #ef4444;

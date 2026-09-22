@@ -20,6 +20,17 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// 二进制资源（巡检现场照片等）的鉴权请求信息。
+///
+/// 这些接口只认 `Authorization` 头、不支持匿名访问，也没有静态目录，
+/// 所以不能直接拼 URL 交给 `Image.network`，必须把 headers 一起带过去。
+class BinaryRequest {
+  const BinaryRequest(this.uri, this.headers);
+
+  final Uri uri;
+  final Map<String, String> headers;
+}
+
 /// 令牌存取抽象：真机用 SharedPreferences，单元测试用内存实现注入。
 abstract class TokenStore {
   Future<String?> readAccessToken();
@@ -173,6 +184,11 @@ class ApiClient {
       request('POST', path, form: form, auth: auth);
 
   Future<dynamic> delete(String path, {bool auth = true}) => request('DELETE', path, auth: auth);
+
+  /// 拼一个带鉴权的二进制资源请求，交给 `Image.network(r.uri, headers: r.headers)` 使用。
+  /// 与普通 JSON 接口一样会带上当前 access token。
+  BinaryRequest binaryRequest(String path, {Map<String, dynamic>? query}) =>
+      BinaryRequest(_buildUri(path, query), _headers(auth: true, json: false));
 
   Future<dynamic> request(
     String method,

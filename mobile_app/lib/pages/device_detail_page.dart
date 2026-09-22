@@ -42,6 +42,12 @@ class _DeviceDetailPageState extends State<DeviceDetailPage> {
     await _future.catchError((_) => <String, dynamic>{});
   }
 
+  /// 去设备台账：先把当前设备写入全局定位，台账页会只显示这台设备
+  void _openInLedger() {
+    focusedDeviceId.value = widget.id;
+    Navigator.of(context).pushNamed('/devices');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -60,13 +66,48 @@ class _DeviceDetailPageState extends State<DeviceDetailPage> {
       ),
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () => Navigator.of(context).pushNamed('/records'),
-            icon: const Icon(Icons.fact_check_outlined, size: 18),
-            label: const Text('查看巡检记录'),
-          ),
+        // 诊断要带上设备台账信息（名称/类型/状态/建筑），所以复用同一个 future 取 device
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: _future,
+          builder: (context, snapshot) {
+            final device = asMap(snapshot.data?['device']);
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: device.isEmpty
+                        ? null
+                        : () => Navigator.of(context)
+                            .pushNamed('/device-diagnose', arguments: device),
+                    icon: const Icon(Icons.online_prediction_outlined, size: 18),
+                    label: const Text('AI 故障诊断'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).pushNamed('/records'),
+                        icon: const Icon(Icons.fact_check_outlined, size: 18),
+                        label: const Text('查看巡检记录'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _openInLedger,
+                        icon: const Icon(Icons.list_alt_outlined, size: 18),
+                        label: const Text('设备台账'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

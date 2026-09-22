@@ -399,8 +399,8 @@ os.environ.setdefault("ENV", "development")
 
 | 级别 | 问题 | 说明与建议 |
 | --- | --- | --- |
-| 中 | 数据大屏右列「实时告警」列表与「待办事项」面板存在视觉重叠 | 已用「启用/禁用项目全局样式」A/B 对比确认前后一致，属既有布局问题，建议单独调整 `DataScreen.vue` 右列高度分配 |
-| 中 | 告警中心列表区横向溢出，「处理」列被「操作」列遮挡 | 同样经 A/B 确认是既有问题，建议调整 `AlertCenter.vue` 表格列宽或将操作列固定 |
+| ~~中~~ **已修复** | ~~数据大屏右列「实时告警」列表与「待办事项」面板存在视觉重叠~~ | 根因不是「高度分配」而是 `.alarm-scroll-panel` 被 `max-height:280px` 卡住后，`.panel-body` 作为 flex 子项默认 `min-height:auto` 拒绝收缩，列表越长越溢出面板框（注入 11 条时溢出 **635px**，盖住下面三个面板）。已修 `DataScreen.vue`，见 13.12.1 |
+| ~~中~~ **已修复** | ~~告警中心列表区横向溢出，「处理」列被「操作」列遮挡~~ | 列宽总和 1180px > 可视区，后两列必须横向滚动才能看到，而固定「操作」列浮在右边缘把「处置状态」盖住。已收紧列宽到 1060px，见 13.12.2 |
 | 低 | 未纳入自动化的检查项 | 移动端 App 原生工程、真实大模型外呼（当前 DEMO_MODE 走本地兜底）仍需人工验证 |
 | 低 | `node_modules/.bin` 缺少 playwright 软链 | 因此 `npx playwright test` 与 `npm run test:e2e` 会报「不是内部或外部命令」。重跑一次 `npm install` 生成软链即可；当前请用第 1 节的 `node node_modules/@playwright/test/cli.js test` |
 | 低 | 档案写入缺陷的回归用例 | 已由 `test_report_archive.py` 覆盖通过；建议再补一条「占位符/字段数一致」的守护用例，避免同类问题复发 |
@@ -1633,4 +1633,232 @@ WebSocket 升级正常（101 Switching Protocols）
   （`198.18.0.57`）而系统代理常是关的（`ProxyEnable=0`），此时直连必然 TLS 握手失败，
   `git push` 前要先 `$env:HTTPS_PROXY="http://127.0.0.1:7897"`（或把 Clash 的「系统代理」打开）；
   它关掉时直连正常，不需要代理。
+
+### 13.12 前端两处布局缺陷修复（2026-09-19 追加）
+
+第 8 节遗留的两个「中」级前端问题。这一轮没有靠猜，而是在浏览器里逐个量元素几何位置，
+定位到确切机制后修掉 —— 两处的成因都不是「样式没调好」，而是有明确布局原因。
+
+#### 13.12.1 数据大屏右列：告警列表溢出面板、盖住下方面板
+
+**现象**：右列「实时告警」列表越长，越会压到下面「待办事项」「建筑风险」等面板上。
+
+**定位**（浏览器内量 `getBoundingClientRect()`）：
+
+| 场景 | 面板框 bottom | `.panel-body` bottom | 内部列表 scrollHeight / clientHeight |
+| --- | --- | --- | --- |
+| 演示数据（3 条告警） | 410 | **421** | 226 / 226 |
+| 注入克隆节点到 11 条（放大复现） | 418 | **1053** | 850 / 850 |
+
+- 右列子元素是顺序排列的（相邻间隔 14px），右列本身也确实 `overflow-y:auto` → **重叠不发生在面板之间**
+- 真因：`.alarm-scroll-panel` 有 `max-height:280px`，而它的 `.panel-body` 是**普通 block**（并非 flex 容器），
+  作为 flex 子项默认 `min-height:auto` → **拒绝收缩到 max-height 以内**，内容直接溢出面板框；
+  列表 `scrollHeight == clientHeight` 说明它**从未滚动过**（`.alarm-scroll-list` 的 `flex:1` 因父级不是 flex 容器而失效）
+- 溢出量随告警条数线性增长：3 条时 11px，11 条时 **635px**，足以盖住下面三个面板
+
+**修复**（`frontend/src/views/DataScreen.vue`，`.alarm-scroll-panel .panel-body`）：
+`flex:1` + `min-height:0` + `display:flex` + `flex-direction:column` + `overflow:hidden` ——
+让 body 可收缩、并成为真正的 flex 容器，内部 `.alarm-scroll-list` 的 `flex:1 + overflow-y:auto` 才生效。
+
+**验证**（同样注入 11 条对比）：
+
+| 指标 | 修复前 | 修复后 |
+| --- | --- | --- |
+| `.panel-body` bottom | 1053 | **417**（面板框 418 之内） |
+| 列表 scrollHeight / clientHeight | 850 / 850（不滚动） | 850 / **214**（内部滚动） |
+| 下一个面板 top | 432（被压住） | 432（不再被压住） |
+
+- 证据：`73-data-screen-alarm-panel-repro.png`（注入 11 条的修复后状态）、
+  `74-data-screen-right-column.png`（演示数据下的正常状态）
+- 回归：E2E `data-screen.spec.js` **8 passed**（含「右侧列表可下钻到对应页面」这条）
+
+#### 13.12.2 告警中心：表格横向溢出，「处置状态」被固定「操作」列遮住
+
+**现象**：列表右侧的「处置状态」「告警时间」看不见，被固定在右边缘的「操作」列压住。
+
+**定位**（`/alert-center`，浏览器内量）：
+
+| 项 | 值 |
+| --- | --- |
+| 内层表格实际宽度 | **1180px**（各列宽之和 50+160+90+140+140+160+100+160+180） |
+| 可视区宽度 | **825px**（1164px 窗口 − 侧边栏与内边距） |
+| 横向滚动 | 存在（`.el-scrollbar__wrap` scrollWidth 1180 / clientWidth 825） |
+
+即列宽总量超出可视区，后两列**必须横向滚动才能看到**；而 `fixed="right"` 的「操作」列始终浮在右边缘
+（量得 left 926 / right 1106），把「处置状态」（1021→1121）的右半截压在下面 —— 用户看到的就是「被遮挡」。
+证据：`71-alert-center-columns-before.png`。
+
+**修复**（`frontend/src/views/AlertCenter.vue`）：收紧列宽，总量 **1180 → 1060**：
+
+| 列 | 原宽 | 现宽 | 说明 |
+| --- | --- | --- | --- |
+| 告警编号 | 160 | 130 | |
+| 告警级别 | 90 | 90 | 曾试 80，4 字表头折行，退回 90 |
+| 告警类型 | 140 | 120 | |
+| 设备 | 140 | 120 | |
+| 位置（min-width） | 160 | 130 | |
+| 处置状态 | 100 | 90 | |
+| 告警时间 | 160 | 160 | 时间戳 19 字符，不能再压 |
+| 操作 | 180 | 170 | 需容纳「详情/确认/派单」三个按钮 |
+
+**验证**：
+- 改后逐格算「内容是否溢出单元格」（`scrollWidth − clientWidth`）→ 9 列**全部为 0**（`综合办公楼A座` 在 130 内、
+  三个按钮在 170 内均放得下）
+- 表头 9 格高度均为 **40px**（单行，无折行）
+- 内层表格宽度实测 1060px（与列宽之和一致）
+- 证据：`72-alert-center-columns-after.png`
+- 回归：E2E `data-screen.spec.js` 中「右侧列表可下钻到告警中心」用例仍通过
+
+**已知限制**：窗口宽度低于约 **1400px**（侧边栏展开时可视区 ≈ 窗口宽 − 339）时仍会出现横向滚动 ——
+9 列信息在窄屏下无法全部塞下，这是列数决定的、无法靠调宽度消除。
+本次修复把「全列显示所需窗口宽度」从 **≈1519px 降到 ≈1399px**，常见 1440 / 1920 屏下不再有列被遮挡。
+
+---
+
+### 13.13 移动端功能补齐：追平 Web 端（2026-09-19 追加）
+
+**背景**：移动端此前只覆盖「首页 / 巡检 / 工单 / 告警 / 我的」5 个 tab，相对 Web 端的 62 条路由明显偏薄；
+且已上线的页面本身也有若干「看得见、点不动/看不到」的缺口。本轮做了三件事：**补后端缺口接口 → 补齐已有页面 → 新增页面与小功能**。
+
+#### 13.13.1 后端新增两个接口
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/records/{record_id}/image?index=0` | 巡检现场图片下载。此前移动端只能拿到 `image_path` 字符串（一个磁盘相对路径），Web 端有 nginx 静态目录可看，移动端**完全没有可用的取图通道**，只能显示文件名 |
+| `POST /api/notifications/{notification_id}/read` | 单条通知已读。此前只有 `mark-all-read`，点开一条就等于全读，未读数会失真 |
+
+实现要点（`backend/routers/inspection.py`、`backend/services/notification_service.py`）：
+
+- 取图接口按 **主库 → 运行库** 两级回退：主库 `inspection_records.image_path` 是单张；运行库巡检档案是 `image_paths` 数组，用 `index` 选第几张。两端都用 `tenant_id` 过滤，越权访问返回 404 而不是 403。
+- 路径做了白名单校验（`root in path.parents` 且拒绝 `..`），并**同时接受两个根目录**：进程 CWD 下的 `uploads/`（`agent_service.save_upload` 实际写入位置）与 `UPLOAD_STORAGE_DIR`（容器里的独立数据卷）—— 两者在容器里并不一致，只认一个必然有一半取不到图。
+- 通知已读沿用既有的 `data/notification_read.json` 扁平存储（通知是按业务数据实时拼出来的，没有独立表），只追加 id，**无需改表结构**。
+
+**实测**：
+
+| 请求 | 结果 |
+| --- | --- |
+| `GET /api/records/5/image`（主库记录） | 200 `image/jpeg` 27699B，`Content-Disposition: attachment; filename="inspection_10a29cc6….jpg"` |
+| `GET /api/records/REC-M-1/image`（运行库档案，字符串 id + `uploads\…` 反斜杠路径） | 200 `image/jpeg` 27699B |
+| `GET /api/records/999999/image` / `NO-SUCH-ARCHIVE` | 404 |
+| `GET /api/records/REC-M-1/image?index=5` / `?index=-1` | 404 |
+| `GET /api/records/DEMO-INSPECTION-001/image` | 404（该演示档案的 `image_paths` 指向的 `demo_scene_*.jpg` 磁盘上确实不存在，属正确行为） |
+| `POST /api/notifications/{id}/read` | `{"message":"read","id":"…","read_count":325}`；列表页 `read` 由 `false` → `true`，`summary.unread` 由 1 → 0 |
+
+#### 13.13.2 补齐已有页面的 6 个缺口
+
+| # | 缺口 | 处理 |
+| --- | --- | --- |
+| 1 | 巡检上报没有「所属建筑」 | 新增 `GET /api/buildings` 下拉（该接口返回**裸数组**）。核对后端后确认移动端走的 `POST /api/mobile/report` **接收 `building_id` Form 字段**（建筑存在且 `location` 为空时用建筑名补全位置），因此是真实提交，不是摆设 |
+| 2 | 工单详情字段不全 | 补上 `ticket_type` / `source` / `device_id` / `remark`、来源巡检记录（可跳转）、处理与复查结果（`handle_result` / `review_result` / `reviewed_at` / `review_note`）。**未做**图片证据：`GET /api/workorders/{id}` 返回体里没有图片字段 |
+| 3 | 进设备详情后返回列表不带定位 | 新增全局 `focusedDeviceId`，从详情返回、或从扫码结果进入时把列表收敛到该设备，顶部提示条可「显示全部」复位。**限制**：扫码页用的是 `pushReplacementNamed`，返回落点是首页 tab 而非台账，故扫码路径靠「打开台账时自动定位」生效 |
+| 4 | 通知不可点、点了不能单条已读 | 卡片改为可点：先调单条已读 → 刷新未读 → 按 `link` 的 query 参数跳转（`order_id`→工单、`record_id`→记录、`alert_id`→告警、`device_id`→设备）；`/hardware` 等移动端没有对应页面的给 SnackBar 提示而不是跳空白页 |
+| 5 | 智能问答丢弃 `references` | 结果下方新增可折叠「引用依据（N）」，展示 `title / source / category / score / content` |
+| 6 | 巡检照片只显示文件名 | 新增带鉴权的取图请求（Bearer header，接口不支持匿名也不走静态目录），用 `Image.network(url, headers: …)` 展示缩略图 + 点击放大；`errorBuilder` 兜底「暂无图片证据」，不出现红色报错块 |
+
+#### 13.13.3 新增页面与小功能（8 个新页面）
+
+| 页面 | 依赖接口 | 说明 |
+| --- | --- | --- |
+| 巡检档案列表 | `GET /api/inspection-archives`（裸数组）+ `/dashboard` | 关键词 + 风险等级/复查状态筛选走**后端查询参数**，不是前端假筛 |
+| 巡检档案详情 | `GET /api/inspection-archives/{record_id}` | 报告编号与验真入口、`closure_status` 闭环情况、`quality` 报告质量评分与检查项、隐患明细、现场图片证据链（按 `index` 逐张取图）、整改前后图片、时间线、RAG 依据 |
+| 批量巡检列表 | `GET /api/batch-inspection/list` + `POST /create` | 状态筛选 + 新建任务表单 |
+| 批量巡检详情 | `GET /api/batch-inspection/{id}` + `/progress` | 逐条子任务与进度；仅 `pending/running` 时每 **8 秒**轮询，进终态或页面销毁立即停表 |
+| 每日安全简报 | `GET /api/intelligence/daily-brief` | 可切日期，展示 highlights / 告警与巡检统计 / 趋势 / 今日重点 |
+| 报告验真 | `GET /api/reports/verify/{report_no}` + `/verify-qr/{report_no}` | 验真结果 + 二维码（带鉴权头加载） |
+| 告警统计 | `GET /api/alert/statistics` | 扁平字段（`total/pending/processing/resolved/merged/escalated/critical/high/medium/low/todayCount/thisWeek`）+ `byType` / `trend` |
+| 设备 AI 诊断 | `POST /api/intelligence/diagnose-device` | 故障概率排序、证据、维修建议与工时 |
+
+同时在告警列表加入**多选合并**（`POST /api/alerts/merge`，body `{primary_id, duplicate_ids[]}`，确认弹窗说明「以第一条为主告警」）；
+报告「分享」用 `Clipboard` 复制验真链接（**未新增三方依赖**）；入口统一收在「我的 → 更多功能」与首页「巡检闭环」卡。
+
+#### 13.13.4 如实记录的降级项
+
+| 项 | 原因 |
+| --- | --- |
+| 批量巡检进度页的「成功/失败条数」 | `progress` 接口没有这两个字段，改为展示真实的高/中/低风险计数，未编造 |
+| 批量巡检列表不显示建筑/巡检人 | 返回结构里有这两个 key，但实测恒为空串（`serialize()` 未带 payload），页面按「有值才显示」处理 |
+| 整改前后图片大多只能占位 | `before_images/after_images` 是磁盘相对路径，后端**只有按档案 `image_paths` 下标取图的接口**，没有「按任意路径取图」的接口；只有路径能在本档案 `image_paths` 中定位到下标时才加载 |
+| 归档状态筛选 UI 未做 | 接口支持 `archive_status`，但实测 22 条全部是「已归档」，加筛选无信息量（API 参数已保留） |
+| 告警统计 `byType` 显示英文标识 | 统计接口不返回中文标签（列表接口才有 `alert_type_label`），不臆造映射 |
+| 工单图片证据 | 见 13.13.2 #2 |
+| 扫码进设备详情后返回落点 | 见 13.13.2 #3 |
+
+#### 13.13.5 验证结果
+
+| 项 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端回归 | `python -m pytest tests/ -q` | **612 passed**，26 subtests passed（改动前后一致） |
+| 移动端静态检查 | `mobile_app\flutter_analyze.bat`（经 ASCII 联接 `F:\mob_ascii`） | **No issues found!** 0 error / 0 warning / 0 info |
+| 移动端单测（含真实后端冒烟） | `F:\flutter\bin\flutter.bat test`（在 `F:\mob_ascii` 下） | **All tests passed! (+25)** |
+| Release APK | `mobile_app\build_apk.bat http://10.0.2.2:8000` | `app-release.apk` **68.1MB**（另有 arm64 25.6MB / armeabi-v7a 21.4MB / x86_64 28.1MB 分包） |
+
+**测试数据清理**：本轮验证期间产生的临时数据已全部删除并复核 ——
+主库 `fault_tickets` 由 1 行 → **0 行**（`MOBILE-FIELD-CHECK 移动端字段核对测试工单`）、
+`background_tasks` 由 1 行 → **0 行**（`BATCINSP-20260919-54CB3DA3` 批量巡检任务）；
+`inspection_records` 保持 5 行（为本轮之前模拟器联调留下的真实巡检数据，非本次测试数据）。
+
+#### 13.13.6 Android 模拟器实机走查（Release APK）
+
+验证方式：`emulator-5554`（AVD `fire_api36`，1080×2400）安装本轮构建的 **Release APK**，
+连本机后端（`--dart-define=API_BASE_URL=http://10.0.2.2:8000`），以 `admin` 真实登录后逐页走查并截图。
+
+| 截图 | 走查内容 | 结果 |
+| --- | --- | --- |
+| `75-mob-01-login.png` | 登录页 | 正常，页脚显示编译期注入的服务端地址 |
+| `75-mob-03-home.png` | 首页 | 统计卡正常；**新增的「巡检闭环」卡**（巡检档案 / 批量巡检）已出现 |
+| `75-mob-04-archives-list.png` | 巡检档案列表 | 概览 22 / 10 / 15 / 21、关联工单 344 张闭环 31 张闭环率 9.0%；筛选 chip 与列表卡片（风险等级 / 报告编号 / 已归档 / 待复查）均正常 |
+| `75-mob-05/06/07-archive-detail-*.png` | 档案详情 | 风险分 50、基本信息、报告编号与**验真/分享**按钮、整改闭环、隐患明细、**现场图片证据（1 张，图确实渲染出来了）**、档案时间线 |
+| `75-mob-08-batch-list.png` | 批量巡检列表 | 空态正常（此时测试任务已清理），右下角「新建批量巡检」入口可见 |
+| `75-mob-09-batch-create-dialog.png` | 新建表单 | 任务名称 / 所属建筑（可选）/ 巡检人（可选，默认当前用户）/ 优先级；并如实标注「未指定巡检点位时，后端会按楼宇通用清单生成 10 个点位」 |
+| `75-mob-10-batch-list-created.png` | 创建后列表 | `POST /api/batch-inspection/create` **200**，列表自动刷新出新任务（待执行，完成 0/10） |
+| `75-mob-11-batch-detail.png` | 任务详情与进度 | 进度 **100%**、已完成 10/总数 10、高/中/低风险 0/1/9；任务信息（所属建筑 综合办公楼、建筑编号 default、巡检人 系统管理员、计划/创建/开始/结束时间）；巡检结果 10 条含真实隐患与建议 |
+| `75-mob-13-profile-more.png` | 「我的 → 更多功能」 | 巡检档案 / 批量巡检 / 每日简报 / 设备 AI 诊断 / 报告验真 5 个入口 |
+| `75-mob-14-daily-brief.png` | 每日安全简报 | 简报正文、重点提示、告警统计（总数/已处置/待处理/严重/高/中/低）、完成巡检 5 次发现隐患 10 项、近 7 日告警趋势柱状图 |
+| `75-mob-15b-device-diagnose-result.png` | 设备 AI 诊断 | 诊断结论「设备老化」、信息完整度 80%、预计维修工时 2-4 小时、可能原因与参考权重；**并如实标注「weight 为参考权重，取自知识库经验，未接入设备台账，非故障概率」** |
+| `75-mob-16-report-verify.png` | 报告验真 | 输入框 + 待输入空态正常 |
+| `75-mob-17-alerts-toolbar.png` | 告警列表 | 新增的「统计 / 多选合并」工具条正常 |
+| `75-mob-18-alert-statistics.png` | 告警统计 | 处置状态、级别分布、时间维度、按告警类型、近 7 日趋势 |
+| `75-mob-20-notification-tap.png` | 通知点击 | 点击后弹出「工单「WO-20260528-A2B413」暂不支持在移动端打开，请在 Web 端查看」—— 即 13.13.2 #4 里说明的字符串 id 降级分支，确认**不会跳空白页** |
+
+走查中另有一处操作事实值得记录：APK 安装时遇到 `INSTALL_FAILED_VERSION_DOWNGRADE`
+（模拟器上残留的旧包 versionCode 4001 > 当前 `1.0.0+1`），`adb uninstall` 后重装即可，
+与本轮代码无关。
+
+**走查产生的数据已清理**：应用内新建的那条批量巡检任务（`BATCINSP-20260919-DA1485C2` / `MOBILE-SHOT-BATCH-01`，
+状态 success）已删除，`background_tasks` 复核为 **0 行**；`fault_tickets` **0 行**、
+主库 `inspection_records` **5 行**、运行库 `inspection_records` **22 行** / `work_orders` **344 行**，均与走查前一致。
+
+---
+
+### 13.14 Web 侧边栏改为「隐藏式」（2026-09-19 追加）
+
+**背景**：侧边栏此前固定占 238px 且不可收起，窄窗口下内容区被压得很紧
+（13.12 里告警中心那一处横向溢出，本质就是「内容区不够宽」的连带后果）。
+改为**默认收起、点顶栏按钮才展开**，把宽度让给内容。
+
+**实现**（`frontend/src/App.vue`）：
+
+- 顶栏左侧新增一个开关按钮（`Fold` / `Expand` 图标随状态切换，带 `title` 与 `aria-expanded`）。
+- `el-aside` 的宽度改为 `:width="sidebarOpen ? '238px' : '0px'"`，并用 `width` 过渡做动画；
+  `overflow:hidden` 裁掉内容，内层 `.aside > *` 固定 238px —— 否则收起过程中菜单文字会被反复挤压换行，
+  动画会「跳」。这里**不用 `v-if`**，避免展开/收起把菜单展开态销毁。
+- 状态记在 `localStorage['fire.sidebar.open']`，刷新后保持；首次访问即收起。
+- 数据大屏（`/dashboard`）本来就不渲染侧边栏与顶栏，不受影响。
+
+**实测**（浏览器内量 `offsetWidth` / `getBoundingClientRect()`，窗口 **1185px**，告警中心页 9 列表格）：
+
+| 状态 | 侧边栏 | `.main` 宽度 | 表格内容宽 / 可视宽 | 是否横向滚动 |
+| --- | --- | --- | --- | --- |
+| 收起（默认） | **0px** | **1170px** | 1084 / 1084 | **否** |
+| 展开 | 238px | 932px | 1060 / 846 | 是（1060 > 846） |
+
+即：同一窗口下收起侧边栏后，13.12 修过的那张 9 列表格**连横向滚动都不需要**了
+（展开时仍需要）。按 13.12 的结论折算，全列显示所需窗口宽度从展开态的 ≈1399px 降到收起态的 **≈1161px**。
+
+**交互验证**：点开关 → 展开（`--el-aside-width: 238px`）；再点 → 收起（`0px`）；
+刷新页面状态保持（`localStorage` 复核 `"0"` / `"1"` 与 DOM 一致）。
+
+**回归**：`node node_modules/@playwright/test/cli.js test data-screen.spec.js pages.spec.js` → **10 passed**
+（其中 `data-screen.spec.js` 里「数据大屏不渲染 `.aside`」的断言仍然成立；
+`pages.spec.js` 的核心页面冒烟覆盖登录后逐页打开）。
 

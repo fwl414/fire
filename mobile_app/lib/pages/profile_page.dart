@@ -59,6 +59,8 @@ class _ProfilePageState extends State<ProfilePage> {
           _buildHeader(),
           _buildStats(),
           _buildMenu(),
+          const SizedBox(height: 12),
+          _buildMoreFeatures(),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
@@ -267,6 +269,53 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _divider() => const Divider(height: 1, indent: 62);
+
+  /// 更多功能：巡检档案 / 批量巡检 / 每日简报 / 设备 AI 诊断 / 报告验真。
+  /// 每一项都是新页面，路由在 `main.dart` 的 `routes` 与 `onGenerateRoute` 里注册。
+  Widget _buildMoreFeatures() {
+    return SectionCard(
+      title: '更多功能',
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          _menuTile(
+            icon: Icons.inventory_2_outlined,
+            color: const Color(0xFF2563EB),
+            title: '巡检档案',
+            onTap: () => Navigator.of(context).pushNamed('/archives'),
+          ),
+          _divider(),
+          _menuTile(
+            icon: Icons.batch_prediction_outlined,
+            color: const Color(0xFF15803D),
+            title: '批量巡检',
+            onTap: () => Navigator.of(context).pushNamed('/batch-inspections'),
+          ),
+          _divider(),
+          _menuTile(
+            icon: Icons.summarize_outlined,
+            color: const Color(0xFFEA580C),
+            title: '每日简报',
+            onTap: () => Navigator.of(context).pushNamed('/daily-brief'),
+          ),
+          _divider(),
+          _menuTile(
+            icon: Icons.online_prediction_outlined,
+            color: const Color(0xFF7C3AED),
+            title: '设备 AI 诊断',
+            onTap: () => Navigator.of(context).pushNamed('/device-diagnose'),
+          ),
+          _divider(),
+          _menuTile(
+            icon: Icons.verified_outlined,
+            color: const Color(0xFF0E7490),
+            title: '报告验真',
+            onTap: () => Navigator.of(context).pushNamed('/report-verify'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _menuTile({
     required IconData icon,

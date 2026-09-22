@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 
 import 'pages/alert_detail_page.dart';
+import 'pages/alert_statistics_page.dart';
 import 'pages/alerts_page.dart';
+import 'pages/archive_detail_page.dart';
+import 'pages/archives_page.dart';
+import 'pages/batch_inspection_detail_page.dart';
+import 'pages/batch_inspections_page.dart';
+import 'pages/daily_brief_page.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/device_detail_page.dart';
+import 'pages/device_diagnose_page.dart';
 import 'pages/devices_page.dart';
 import 'pages/fire_qa_page.dart';
 import 'pages/inspection_page.dart';
@@ -12,6 +19,7 @@ import 'pages/notifications_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/record_detail_page.dart';
 import 'pages/records_page.dart';
+import 'pages/report_verify_page.dart';
 import 'pages/scan_page.dart';
 import 'pages/workorder_create_page.dart';
 import 'pages/workorder_detail_page.dart';
@@ -76,6 +84,10 @@ class FireMobileApp extends StatelessWidget {
         '/notifications': (context) => const NotificationsPage(),
         '/scan': (context) => const ScanPage(),
         '/workorder-create': (context) => const WorkorderCreatePage(),
+        '/archives': (context) => const ArchivesPage(),
+        '/batch-inspections': (context) => const BatchInspectionsPage(),
+        '/daily-brief': (context) => const DailyBriefPage(),
+        '/alert-statistics': (context) => const AlertStatisticsPage(),
       },
       onGenerateRoute: (settings) {
         switch (settings.name) {
@@ -87,6 +99,19 @@ class FireMobileApp extends StatelessWidget {
             return _detailRoute(settings, DeviceDetailPage(id: _idArg(settings.arguments)));
           case '/record-detail':
             return _detailRoute(settings, RecordDetailPage(id: _idArg(settings.arguments)));
+          // 巡检档案的 record_id 是字符串（`REC-M-1`），也可能是纯数字，统一按字符串传
+          case '/archive-detail':
+            return _detailRoute(settings, ArchiveDetailPage(recordId: _strArg(settings.arguments)));
+          // 批量巡检任务 id 同样是字符串（`BATCINSP-…`）
+          case '/batch-detail':
+            return _detailRoute(
+              settings,
+              BatchInspectionDetailPage(taskId: _strArg(settings.arguments)),
+            );
+          case '/report-verify':
+            return _detailRoute(settings, ReportVerifyPage(reportNo: _strArg(settings.arguments)));
+          case '/device-diagnose':
+            return _detailRoute(settings, DeviceDiagnosePage(device: asMap(settings.arguments)));
           default:
             return null;
         }
@@ -98,10 +123,16 @@ class FireMobileApp extends StatelessWidget {
     return MaterialPageRoute<void>(builder: (_) => page, settings: settings);
   }
 
+  /// 数字 id 路由用（告警 / 工单 / 设备 / 巡检记录）。
+  /// 保持 int 签名不变，改用 [_strArg] 解析字符串 id 的路由。
   int _idArg(Object? arguments) {
     if (arguments is int) return arguments;
     return int.tryParse('${arguments ?? ''}') ?? 0;
   }
+
+  /// 字符串 id 路由用：档案 `REC-M-1`、批量任务 `BATCINSP-…`；
+  /// 纯数字 id（如 `12`）也原样当字符串返回，兼容「数字 id 也合法」的页面。
+  String _strArg(Object? arguments) => '${arguments ?? ''}'.trim();
 }
 
 /// 启动门：先判断本地有没有令牌，有则续期 + 拉取用户信息，再决定进主界面还是登录页。

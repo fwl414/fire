@@ -12,6 +12,14 @@ export function alertStatistics() {
   return request.get('/api/alert/statistics')
 }
 
+export function updateAlertStatus(id, status) {
+  return request.put(`/api/alerts/${id}/status`, { status })
+}
+
+export function handleAlert(id, payload) {
+  return request.post(`/api/alerts/${id}/handle`, payload)
+}
+
 export function decisionLogs(params) {
   return request.get('/api/decision-logs', { params })
 }

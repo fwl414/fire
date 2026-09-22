@@ -29,20 +29,45 @@ class _DevicesPageState extends State<DevicesPage> {
   List<Map<String, dynamic>> _items = [];
   late Future<List<Map<String, dynamic>>> _future;
 
+  /// 目标设备：从扫码结果 / 设备详情带过来的 id，非空时列表只显示它
+  int? _focusId;
+
   @override
   void initState() {
     super.initState();
+    _focusId = focusedDeviceId.value;
+    focusedDeviceId.addListener(_onFocusChanged);
     _future = _loadFirstPage();
   }
 
   @override
   void dispose() {
+    focusedDeviceId.removeListener(_onFocusChanged);
     _debounce?.cancel();
     _keywordController.dispose();
     super.dispose();
   }
 
   bool get _hasMore => _items.length < _total;
+
+  void _onFocusChanged() {
+    if (!mounted) return;
+    setState(() => _focusId = focusedDeviceId.value);
+    _ensureFocusLoaded();
+  }
+
+  void _clearFocus() => focusedDeviceId.value = null;
+
+  /// 目标设备可能不在第一页：必要时继续翻页直到找到它（或没有更多）
+  Future<void> _ensureFocusLoaded() async {
+    final id = _focusId;
+    if (id == null || id == 0) return;
+    while (mounted && _hasMore && !_items.any((item) => intOf(item['id']) == id)) {
+      final before = _items.length;
+      await _loadMore();
+      if (_items.length == before) break; // 翻页失败/无新增，避免死循环
+    }
+  }
 
   /// 首页加载同时刷新 `_items` / `_total`，供「加载更多」继续累加。
   Future<List<Map<String, dynamic>>> _loadFirstPage() async {
@@ -55,6 +80,7 @@ class _DevicesPageState extends State<DevicesPage> {
     _page = 1;
     _total = intOf(data['total']);
     _items = asMapList(data['items']);
+    await _ensureFocusLoaded();
     return _items;
   }
 
@@ -117,9 +143,13 @@ class _DevicesPageState extends State<DevicesPage> {
     }
   }
 
-  void _openDetail(int id) {
+  /// 进入详情；返回时把该设备写入 `focusedDeviceId`，
+  /// 列表据此只显示这台设备，而不是又回到全量列表。
+  Future<void> _openDetail(int id) async {
     if (id == 0) return;
-    Navigator.of(context).pushNamed('/device-detail', arguments: id);
+    await Navigator.of(context).pushNamed('/device-detail', arguments: id);
+    if (!mounted) return;
+    focusedDeviceId.value = id;
   }
 
   @override
@@ -129,6 +159,7 @@ class _DevicesPageState extends State<DevicesPage> {
       body: Column(
         children: [
           _buildFilterBar(),
+          if (_focusId != null && _focusId != 0) _buildFocusBanner(),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _refresh,
@@ -137,15 +168,22 @@ class _DevicesPageState extends State<DevicesPage> {
                 onRetry: _reload,
                 loadingMessage: '正在加载设备…',
                 builder: (context, data) {
-                  if (data.isEmpty) {
+                  final visible = _focusId == null || _focusId == 0
+                      ? data
+                      : data
+                          .where((item) => intOf(item['id']) == _focusId)
+                          .toList();
+                  if (visible.isEmpty) {
                     // 空态也放进可滚动列表，保证仍能下拉刷新
                     return ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 120),
+                      children: [
+                        const SizedBox(height: 120),
                         EmptyView(
-                          message: '未找到设备',
+                          message: _focusId == null ? '未找到设备' : '未找到目标设备',
                           icon: Icons.precision_manufacturing_outlined,
+                          actionLabel: _focusId == null ? null : '显示全部设备',
+                          onAction: _focusId == null ? null : _clearFocus,
                         ),
                       ],
                     );
@@ -153,18 +191,48 @@ class _DevicesPageState extends State<DevicesPage> {
                   return ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                    itemCount: data.length + 1,
+                    itemCount: visible.length + 1,
                     itemBuilder: (context, index) {
-                      if (index == data.length) return _buildFooter();
+                      if (index == visible.length) return _buildFooter();
                       return _DeviceTile(
-                        item: data[index],
-                        onTap: () => _openDetail(intOf(data[index]['id'])),
+                        item: visible[index],
+                        onTap: () => _openDetail(intOf(visible[index]['id'])),
                       );
                     },
                   );
                 },
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 定位提示条：说明当前只显示目标设备，并给出恢复全量的入口
+  Widget _buildFocusBanner() {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFFFF7ED),
+      padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
+      child: Row(
+        children: [
+          const Icon(Icons.my_location, size: 14, color: Color(0xFFEA580C)),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              '已定位到目标设备，仅显示该设备',
+              style: TextStyle(fontSize: 12, color: Color(0xFFEA580C)),
+            ),
+          ),
+          TextButton(
+            onPressed: _clearFocus,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('显示全部', style: TextStyle(fontSize: 12)),
           ),
         ],
       ),
@@ -259,7 +327,9 @@ class _DevicesPageState extends State<DevicesPage> {
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: Text(
-          '已加载全部 ${_items.length} 台设备',
+          _focusId == null
+              ? '已加载全部 ${_items.length} 台设备'
+              : '已定位目标设备 · 共加载 ${_items.length} 台',
           style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
         ),
       ),

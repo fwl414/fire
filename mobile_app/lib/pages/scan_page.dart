@@ -57,6 +57,8 @@ class _ScanPageState extends State<ScanPage> {
       }
       await _controller.stop();
       if (!mounted) return;
+      // 把扫到的设备写入全局定位，进入设备台账时直接定位到它而不是全量列表
+      focusedDeviceId.value = deviceId;
       Navigator.of(context).pushReplacementNamed('/device-detail', arguments: deviceId);
     } catch (e) {
       if (!mounted) return;

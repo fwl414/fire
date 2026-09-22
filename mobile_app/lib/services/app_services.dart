@@ -76,3 +76,8 @@ final AppSession session = AppSession();
 /// 告警实时推送计数：WebSocket 收到 alert 事件时 +1，告警列表页监听它自动刷新。
 /// 用计数而不是布尔值，是为了「连续来两条推送」也能各触发一次刷新。
 final ValueNotifier<int> alertPushTick = ValueNotifier<int>(0);
+
+/// 设备台账定位：扫码命中设备、或从设备详情回到台账时写入目标设备 id，
+/// 设备列表页据此把该设备带进列表并定位（避免又只看全量列表）。
+/// 设为 null 表示恢复全量列表。
+final ValueNotifier<int?> focusedDeviceId = ValueNotifier<int?>(null);

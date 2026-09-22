@@ -1175,9 +1175,9 @@ def init_db() -> None:
 # 系统角色定义（种子与权限补齐共用同一份来源）
 SYSTEM_ROLES = [
     ("admin", "系统管理员", "全部功能、系统设置、知识库维护", ["*"]),
-    ("inspector", "巡检员", "发起智能巡检、查看巡检档案",
+    ("inspector", "巡检员", "发起智能巡检、处理工单、查看巡检档案",
      ["dashboard:view", "inspection:run", "records:view", "qa:use", "report:view", "building:view",
-      "batch:view", "batch:create"]),
+      "batch:view", "batch:create", "workorders:view", "workorders:create", "workorders:update"]),
     ("rectifier", "整改负责人", "处理工单、提交复查",
      ["dashboard:view", "workorders:view", "workorders:update", "records:view", "report:view", "building:view"]),
     ("viewer", "查看用户", "只查看总览、档案和报告",
@@ -1192,6 +1192,9 @@ SYSTEM_ROLES = [
 SYSTEM_ROLE_PERMISSION_PATCHES = [
     # v12.9.0：批量巡检权限码此前只存在于权限清单，既未接线也未授权
     ("inspector", ("batch:view", "batch:create")),
+    # v13：巡检员在移动端有「工单」tab（列表/新建/领取/流转），
+    # 但角色从未授过 workorders:*，导致读得到、所有写动作 403（App 却照样把按钮画出来）。
+    ("inspector", ("workorders:view", "workorders:create", "workorders:update")),
 ]
 
 

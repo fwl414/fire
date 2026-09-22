@@ -55,7 +55,11 @@ class _FireQaPageState extends State<FireQaPage> {
       final data = await api.askFire(text);
       if (!mounted) return;
       setState(() {
-        _messages.add(_QaMessage(text: _extractAnswer(data), fromUser: false));
+        _messages.add(_QaMessage(
+          text: _extractAnswer(data),
+          fromUser: false,
+          references: asMapList(data['references']),
+        ));
         _sending = false;
       });
     } catch (error) {
@@ -243,12 +247,16 @@ class _QaMessage {
     required this.fromUser,
     this.failed = false,
     this.question = '',
+    this.references = const [],
   });
 
   final String text;
   final bool fromUser;
   final bool failed;
   final String question;
+
+  /// 后端 `references` 是 RAG 检索到的知识片段（字段见 `_buildReferences`）
+  final List<Map<String, dynamic>> references;
 }
 
 class _MessageBubble extends StatelessWidget {
@@ -307,6 +315,10 @@ class _MessageBubble extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (!fromUser && message.references.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _ReferencePanel(references: message.references),
+                ],
                 if (message.failed && onRetry != null) ...[
                   const SizedBox(height: 2),
                   TextButton.icon(
@@ -329,6 +341,103 @@ class _MessageBubble extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// 「引用依据」折叠面板：数据完全来自后端 `/api/qa/fire` 返回的 `references`。
+class _ReferencePanel extends StatelessWidget {
+  const _ReferencePanel({required this.references});
+
+  final List<Map<String, dynamic>> references;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          iconColor: const Color(0xFF64748B),
+          collapsedIconColor: const Color(0xFF94A3B8),
+          title: Text(
+            '引用依据（${references.length}）',
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF475569),
+            ),
+          ),
+          children: [
+            for (var i = 0; i < references.length; i++)
+              Padding(
+                padding: EdgeInsets.only(top: i == 0 ? 0 : 10),
+                child: _ReferenceItem(index: i + 1, item: references[i]),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 单条引用：后端字段为
+/// `title / category / source / content / score / citation / matched_keywords …`
+class _ReferenceItem extends StatelessWidget {
+  const _ReferenceItem({required this.index, required this.item});
+
+  final int index;
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = textOf(item['title'], fallback: '未命名知识条目');
+    final meta = [
+      textOf(item['source']),
+      textOf(item['category']),
+      if (numOf(item['score']) > 0)
+        '相关度 ${numOf(item['score']).toStringAsFixed(2)}',
+    ].where((text) => text.isNotEmpty).join(' · ');
+    final content = textOf(item['content']).trim();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '【引用$index】$title',
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF334155),
+          ),
+        ),
+        if (meta.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(meta, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+        ],
+        if (content.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            content,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1.5,
+              color: Color(0xFF475569),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

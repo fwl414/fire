@@ -315,6 +315,133 @@ class InfoRow extends StatelessWidget {
   }
 }
 
+/// 巡检现场照片：后端图片接口只认 `Authorization` 头（不支持匿名访问、也没有静态目录），
+/// 所以必须把 `ApiService.recordImageRequest()` 生成的 headers 一起传给 `Image.network`。
+/// 记录没有图片 / 文件缺失时后端返回 404，这里统一兜底成「暂无图片证据」而不是红色报错块。
+/// 点击可放大查看。
+class EvidenceImage extends StatelessWidget {
+  const EvidenceImage({super.key, this.request, this.height = 170});
+
+  /// 为 null 表示这条记录没有图片证据
+  final BinaryRequest? request;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = request;
+    if (image == null) return EvidencePlaceholder(height: height);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: GestureDetector(
+        onTap: () => showDialog<void>(
+          context: context,
+          builder: (context) => _EvidenceImageDialog(request: image),
+        ),
+        child: Image.network(
+          image.uri.toString(),
+          headers: image.headers,
+          height: height,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) =>
+              EvidencePlaceholder(height: height),
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : EvidencePlaceholder(height: height, loading: true),
+        ),
+      ),
+    );
+  }
+}
+
+/// 无照片 / 加载失败时的占位块
+class EvidencePlaceholder extends StatelessWidget {
+  const EvidencePlaceholder({super.key, this.height = 170, this.loading = false});
+
+  final double height;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            )
+          else
+            const Icon(Icons.image_not_supported_outlined,
+                size: 26, color: Color(0xFFCBD5E1)),
+          if (!loading) ...[
+            const SizedBox(height: 6),
+            const Text(
+              '暂无图片证据',
+              style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 点击照片后的放大查看（可双指缩放），不新增页面文件
+class _EvidenceImageDialog extends StatelessWidget {
+  const _EvidenceImageDialog({required this.request});
+
+  final BinaryRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: const EdgeInsets.all(12),
+      child: Stack(
+        children: [
+          InteractiveViewer(
+            minScale: 0.8,
+            maxScale: 4,
+            child: Image.network(
+              request.uri.toString(),
+              headers: request.headers,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const SizedBox(
+                height: 220,
+                child: Center(
+                  child: Text(
+                    '暂无图片证据',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            child: IconButton(
+              tooltip: '关闭',
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 数据加载的统一外壳：加载中 / 失败可重试 / 空态 三态一次处理，
 /// 页面只需提供 `future` 与「有数据时怎么画」。
 class AsyncView<T> extends StatelessWidget {
